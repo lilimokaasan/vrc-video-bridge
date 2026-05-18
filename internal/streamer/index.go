@@ -501,9 +501,9 @@ const indexHTML = `<!doctype html>
 
     <main>
       <section class="converter panel" aria-labelledby="title">
-        <p class="eyebrow">A little room for shared moments</p>
-        <h1 id="title">把喜欢的视频，轻轻递到小房间里。</h1>
-        <p class="lead">贴入一条 Bilibili 地址，稍等片刻，就会整理出可以分享给朋友一起看的链接。</p>
+        <p class="eyebrow">For VRChat watch moments</p>
+        <h1 id="title">把喜欢的视频，轻轻递到 VRChat 里。</h1>
+        <p class="lead">贴入一条 Bilibili 地址，稍等片刻，就会整理出适合在 VRChat 里和朋友一起看的链接。</p>
 
         <form id="convertForm">
           <div class="input-wrap">
@@ -539,7 +539,7 @@ const indexHTML = `<!doctype html>
       <aside class="side">
         <section class="note panel">
           <h2>小小流程</h2>
-          <p>页面会先找到视频的临时入口，再慢慢整理成更安稳的分享链接。</p>
+          <p>页面会先找到视频的临时入口，再慢慢整理成适合 VRChat 播放的分享链接。</p>
           <div class="steps">
             <div class="step"><span class="dot">1</span><span>找到视频入口</span></div>
             <div class="step"><span class="dot">2</span><span>整理成可播放的片段</span></div>
@@ -554,7 +554,7 @@ const indexHTML = `<!doctype html>
       </aside>
     </main>
 
-    <footer>A soft diary for tiny heartbeats, favorite things, and shared moments.</footer>
+    <footer>A soft diary for tiny heartbeats, favorite things, and VRChat moments.</footer>
   </div>
 
   <script>
