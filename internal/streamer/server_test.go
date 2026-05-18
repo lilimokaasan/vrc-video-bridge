@@ -72,3 +72,38 @@ func TestValidateSourceURL(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeBilibiliValue(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "bvid",
+			in:   "BV1Fj411p7cP",
+			want: "https://www.bilibili.com/video/BV1Fj411p7cP",
+		},
+		{
+			name: "video url",
+			in:   "https://www.bilibili.com/video/BV1Fj411p7cP/?spm_id_from=333.788",
+			want: "https://www.bilibili.com/video/BV1Fj411p7cP/?spm_id_from=333.788",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeBilibiliValue(tt.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+
+	if _, err := normalizeBilibiliValue("not-a-video"); err == nil {
+		t.Fatal("expected invalid value to fail")
+	}
+}

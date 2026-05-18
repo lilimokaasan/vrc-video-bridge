@@ -52,6 +52,17 @@ Without R2, it will look like:
 http://localhost:8090/media/<job-id>/video.mp4
 ```
 
+## Direct MP4 Redirect
+
+For a quick temporary Bilibili MP4 redirect, pass `v` on the homepage URL:
+
+```text
+http://localhost:8090/?v=BVxxxx
+http://localhost:8090/?v=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBVxxxx%2F
+```
+
+The service resolves the Bilibili HTML5 MP4 URL and returns `302 Found` to that temporary `.mp4` link. These Bilibili links expire and may still depend on Bilibili's request rules, so the generated `playback_url` remains the steadier option for VRChat use.
+
 ## Direct Download CLI
 
 Download one video as MP4 and exit:

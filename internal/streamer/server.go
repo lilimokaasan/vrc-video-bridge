@@ -76,8 +76,31 @@ func (s *Server) registerRoutes() {
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	if value := strings.TrimSpace(r.URL.Query().Get("v")); value != "" {
+		s.handleDirectRedirect(w, r, value)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, indexHTML)
+}
+
+func (s *Server) handleDirectRedirect(w http.ResponseWriter, r *http.Request, value string) {
+	sourceURL, err := normalizeBilibiliValue(value)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.validateSourceURL(sourceURL); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	directURL, err := s.resolveBilibiliDirectURL(sourceURL)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	http.Redirect(w, r, directURL, http.StatusFound)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -281,6 +304,16 @@ func (s *Server) downloadVideo(sourceURL, workDir string, onDirectURL directURLC
 
 var bvidPattern = regexp.MustCompile(`(?i)BV[0-9A-Za-z]+`)
 
+func normalizeBilibiliValue(value string) (string, error) {
+	if bvid := bvidPattern.FindString(value); bvid != "" {
+		if parsed, err := url.Parse(value); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+			return value, nil
+		}
+		return "https://www.bilibili.com/video/" + bvid, nil
+	}
+	return "", errors.New("v must be a Bilibili BV id or video URL")
+}
+
 type bilibiliViewResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -312,6 +345,36 @@ type bilibiliDashStream struct {
 	BaseURL   string `json:"baseUrl"`
 	Codecs    string `json:"codecs"`
 	Bandwidth int    `json:"bandwidth"`
+}
+
+func (s *Server) resolveBilibiliDirectURL(sourceURL string) (string, error) {
+	bvid := bvidPattern.FindString(sourceURL)
+	if bvid == "" {
+		return "", errors.New("no BV id found in URL")
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	var view bilibiliViewResponse
+	if err := s.fetchBilibiliJSON(client, "https://api.bilibili.com/x/web-interface/view?bvid="+url.QueryEscape(bvid), sourceURL, &view); err != nil {
+		return "", err
+	}
+	if view.Code != 0 || view.Data.CID == 0 {
+		return "", fmt.Errorf("view API returned code %d: %s", view.Code, view.Message)
+	}
+
+	playURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=64&platform=html5&high_quality=1", url.QueryEscape(bvid), view.Data.CID)
+	var play bilibiliPlayURLResponse
+	if err := s.fetchBilibiliJSON(client, playURL, sourceURL, &play); err != nil {
+		return "", err
+	}
+	if play.Code != 0 {
+		return "", fmt.Errorf("playurl API returned code %d: %s", play.Code, play.Message)
+	}
+	direct := selectDirectStream(play.Data.DURL)
+	if direct.URL == "" {
+		return "", errors.New("playurl API did not return a progressive MP4 URL")
+	}
+	return direct.URL, nil
 }
 
 func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string, onDirectURL directURLCallback) (string, string, error) {
