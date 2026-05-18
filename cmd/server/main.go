@@ -14,12 +14,26 @@ func main() {
 	downloadURL := flag.String("download", "", "download one Bilibili URL and exit")
 	format := flag.String("format", "mp4", "output format for direct download: mp4 or hls")
 	outputDir := flag.String("output", "downloads", "output directory for direct downloads")
+	checkR2 := flag.Bool("check-r2", false, "upload a tiny healthcheck object to configured R2 storage and exit")
 	flag.Parse()
+
+	if err := streamer.LoadDotEnv(".env"); err != nil {
+		log.Fatal(err)
+	}
 
 	cfg := streamer.LoadConfig()
 	app, err := streamer.NewServer(cfg)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if *checkR2 {
+		publicURL, err := app.CheckStorage()
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Fprintf(os.Stdout, "r2_ok: %s\n", publicURL)
+		return
 	}
 
 	url := *downloadURL

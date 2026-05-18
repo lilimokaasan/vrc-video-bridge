@@ -110,6 +110,32 @@ func (s *Server) publishMedia(job *Job) (string, error) {
 	return s.storage.PublicURL(prefix + "/index.m3u8"), nil
 }
 
+func (s *Server) CheckStorage() (string, error) {
+	if s.storage == nil {
+		return "", fmt.Errorf("R2 is not configured")
+	}
+
+	file, err := os.CreateTemp("", "bili-vrc-r2-check-*.txt")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(file.Name())
+	defer file.Close()
+
+	if _, err := file.WriteString("bili-vrc-streamer R2 check\n"); err != nil {
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+
+	key := strings.Trim(strings.Join([]string{s.cfg.R2KeyPrefix, "_healthcheck.txt"}, "/"), "/")
+	if err := s.storage.UploadFile(file.Name(), key); err != nil {
+		return "", err
+	}
+	return s.storage.PublicURL(key), nil
+}
+
 func (s *Server) mediaObjectPrefix(job *Job) string {
 	parts := []string{}
 	if s.cfg.R2KeyPrefix != "" {
