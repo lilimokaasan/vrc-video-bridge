@@ -398,6 +398,67 @@ const indexHTML = `<!doctype html>
 
     .copy-link:hover { transform: translateY(-1px); box-shadow: 0 8px 16px rgba(251,152,192,.16); }
 
+    .job-progress {
+      display: none;
+      gap: 10px;
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(251,152,192,.18);
+      background: rgba(255,255,255,.58);
+    }
+
+    .job-progress.is-visible {
+      display: grid;
+    }
+
+    .progress-item {
+      display: grid;
+      gap: 6px;
+    }
+
+    .progress-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: #8a7180;
+      font-size: 12px;
+    }
+
+    .progress-track {
+      height: 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(251,152,192,.14);
+      box-shadow: inset 0 1px 2px rgba(141,126,138,.1);
+    }
+
+    .progress-fill {
+      width: 100%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--pink), #ffd1e3);
+      transform: scaleX(0);
+      transform-origin: left center;
+      transition: transform .38s ease;
+    }
+
+    .progress-item.is-active .progress-fill.is-indeterminate {
+      transform: scaleX(.42);
+      animation: progress-drift 1.4s ease-in-out infinite;
+    }
+
+    .progress-item.is-done .progress-fill {
+      transform: scaleX(1);
+    }
+
+    @keyframes progress-drift {
+      0% { transform: translateX(-92%) scaleX(.42); }
+      50% { transform: translateX(58%) scaleX(.42); }
+      100% { transform: translateX(238%) scaleX(.42); }
+    }
+
     .side {
       display: grid;
       gap: 14px;
@@ -534,6 +595,23 @@ const indexHTML = `<!doctype html>
             <button class="copy-link" data-copy-target="playback" type="button">复制</button>
           </div>
         </div>
+
+        <div class="job-progress" id="jobProgress" aria-live="polite">
+          <div class="progress-item" data-progress-key="download">
+            <div class="progress-meta">
+              <span class="progress-name">下载 MP4</span>
+              <span class="progress-value">等待中</span>
+            </div>
+            <div class="progress-track"><span class="progress-fill"></span></div>
+          </div>
+          <div class="progress-item" data-progress-key="upload">
+            <div class="progress-meta">
+              <span class="progress-name">上传到 R2</span>
+              <span class="progress-value">等待中</span>
+            </div>
+            <div class="progress-track"><span class="progress-fill"></span></div>
+          </div>
+        </div>
       </section>
 
       <aside class="side">
@@ -564,6 +642,8 @@ const indexHTML = `<!doctype html>
     const result = document.querySelector('#result');
     const direct = document.querySelector('#direct');
     const playback = document.querySelector('#playback');
+    const jobProgress = document.querySelector('#jobProgress');
+    const progressItems = document.querySelectorAll('[data-progress-key]');
     const copyButtons = document.querySelectorAll('[data-copy-target]');
     const segmented = document.querySelector('.segmented');
     const progress = document.querySelector('.scrollbar-progress');
@@ -620,6 +700,52 @@ const indexHTML = `<!doctype html>
       }
     }
 
+    function resetJobProgress() {
+      jobProgress.classList.remove('is-visible');
+      progressItems.forEach(item => {
+        item.classList.remove('is-active', 'is-done');
+        item.querySelector('.progress-value').textContent = '等待中';
+        const fill = item.querySelector('.progress-fill');
+        fill.classList.remove('is-indeterminate');
+        fill.style.transform = 'scaleX(0)';
+      });
+    }
+
+    function renderProgress(job) {
+      const progressMap = job.progress || {};
+      const hasProgress = Object.keys(progressMap).length > 0;
+      jobProgress.classList.toggle('is-visible', hasProgress);
+      progressItems.forEach(item => {
+        const key = item.dataset.progressKey;
+        const step = progressMap[key];
+        const value = item.querySelector('.progress-value');
+        const fill = item.querySelector('.progress-fill');
+        item.classList.remove('is-active', 'is-done');
+        fill.classList.remove('is-indeterminate');
+        if (!step) {
+          value.textContent = '等待中';
+          fill.style.transform = 'scaleX(0)';
+          return;
+        }
+        if (step.state === 'done') {
+          item.classList.add('is-done');
+          value.textContent = '完成';
+          fill.style.transform = 'scaleX(1)';
+          return;
+        }
+        item.classList.add('is-active');
+        if (step.bytes_total > 0 || step.percent > 0) {
+          const percent = Math.max(0, Math.min(100, step.percent || 0));
+          value.textContent = percent + '%';
+          fill.style.transform = 'scaleX(' + (percent / 100) + ')';
+        } else {
+          value.textContent = step.message || '进行中';
+          fill.style.transform = '';
+          fill.classList.add('is-indeterminate');
+        }
+      });
+    }
+
     async function createJob(url, format) {
       const res = await fetch('/api/jobs', {
         method: 'POST',
@@ -637,6 +763,7 @@ const indexHTML = `<!doctype html>
         const job = await res.json();
         if (!res.ok) throw new Error(job.error || '还没有听见回声');
         renderLinks(job);
+        renderProgress(job);
 
         if (job.status === 'ready') {
           setLog('已经整理好啦，可以拿去分享了。', job);
@@ -655,6 +782,7 @@ const indexHTML = `<!doctype html>
     form.addEventListener('submit', async event => {
       event.preventDefault();
       result.classList.remove('is-visible');
+      resetJobProgress();
       setLink(direct, '', '正在寻找视频入口...');
       setLink(playback, '', '正在整理分享链接...');
       result.classList.add('is-visible');

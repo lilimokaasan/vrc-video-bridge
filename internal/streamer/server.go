@@ -1,9 +1,11 @@
 package streamer
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -174,6 +176,7 @@ func (s *Server) runJob(id string) {
 		j.Status = StatusRunning
 		j.Message = "正在寻找这段视频..."
 		j.Error = ""
+		j.Progress = JobProgress{}
 	})
 
 	directURL, err := s.prepareMedia(job, func(directURL string) {
@@ -201,6 +204,7 @@ func (s *Server) runJob(id string) {
 			j.Message = "视频已经整理好，正在准备分享链接..."
 		}
 	})
+	s.setJobProgress(job.ID, "upload", "上传到 R2", "active", 0, 0, "正在准备分享链接...")
 
 	playbackURL, err := s.publishMedia(job)
 	if err != nil {
@@ -216,6 +220,8 @@ func (s *Server) runJob(id string) {
 		j.Status = StatusReady
 		j.Message = ""
 		j.PlaybackURL = playbackURL
+		setProgressStep(j, "download", ProgressStep{Label: "下载 MP4", State: "done", Percent: 100, Message: "MP4 已下载完成"})
+		setProgressStep(j, "upload", ProgressStep{Label: "上传到 R2", State: "done", Percent: 100, Message: "分享链接已准备好"})
 	})
 }
 
@@ -230,7 +236,7 @@ func (s *Server) prepareMedia(job *Job, onDirectURL directURLCallback) (string, 
 		return "", err
 	}
 
-	sourcePath, directURL, err := s.downloadVideo(job.SourceURL, workDir, onDirectURL)
+	sourcePath, directURL, err := s.downloadVideo(job, workDir, onDirectURL)
 	if err != nil {
 		return "", err
 	}
@@ -240,11 +246,13 @@ func (s *Server) prepareMedia(job *Job, onDirectURL directURLCallback) (string, 
 		if filepath.Clean(sourcePath) == filepath.Clean(target) {
 			return directURL, nil
 		}
+		s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在整理视频文件...")
 		return directURL, runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
 			"-y", "-i", sourcePath, "-c", "copy", "-movflags", "+faststart", target)
 	}
 
 	indexPath := filepath.Join(workDir, "index.m3u8")
+	s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在整理 HLS 片段...")
 	return directURL, runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
 		"-y", "-i", sourcePath,
 		"-c", "copy",
@@ -255,9 +263,12 @@ func (s *Server) prepareMedia(job *Job, onDirectURL directURLCallback) (string, 
 		indexPath)
 }
 
-func (s *Server) downloadVideo(sourceURL, workDir string, onDirectURL directURLCallback) (string, string, error) {
+func (s *Server) downloadVideo(job *Job, workDir string, onDirectURL directURLCallback) (string, string, error) {
+	sourceURL := job.SourceURL
+	s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在寻找视频入口...")
 	if bvidPattern.MatchString(sourceURL) {
-		if sourcePath, directURL, err := s.downloadVideoWithBilibiliAPI(sourceURL, workDir, onDirectURL); err == nil {
+		if sourcePath, directURL, err := s.downloadVideoWithBilibiliAPI(job, workDir, onDirectURL); err == nil {
+			s.setJobProgress(job.ID, "download", "下载 MP4", "done", 100, 100, "MP4 已下载完成")
 			return sourcePath, directURL, nil
 		}
 	}
@@ -279,9 +290,11 @@ func (s *Server) downloadVideo(sourceURL, workDir string, onDirectURL directURLC
 	args = append(args, s.cfg.YTDLPExtraArgs...)
 	args = append(args, sourceURL)
 
+	s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在下载 MP4...")
 	err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.YTDLPPath, args...)
 	if err != nil {
-		if sourcePath, directURL, fallbackErr := s.downloadVideoWithBilibiliAPI(sourceURL, workDir, onDirectURL); fallbackErr == nil {
+		if sourcePath, directURL, fallbackErr := s.downloadVideoWithBilibiliAPI(job, workDir, onDirectURL); fallbackErr == nil {
+			s.setJobProgress(job.ID, "download", "下载 MP4", "done", 100, 100, "MP4 已下载完成")
 			return sourcePath, directURL, nil
 		} else if s.cfg.YTDLPCookiesFile == "" && s.cfg.YTDLPCookiesFromBrowser == "" {
 			return "", "", fmt.Errorf("%w\nBilibili API fallback also failed: %v\nTry exporting browser cookies and setting YTDLP_COOKIES_FILE, or set YTDLP_COOKIES_FROM_BROWSER when yt-dlp can read your browser profile", err, fallbackErr)
@@ -296,6 +309,7 @@ func (s *Server) downloadVideo(sourceURL, workDir string, onDirectURL directURLC
 	for _, match := range matches {
 		ext := strings.ToLower(filepath.Ext(match))
 		if ext == ".mp4" || ext == ".mkv" || ext == ".webm" {
+			s.setJobProgress(job.ID, "download", "下载 MP4", "done", 100, 100, "MP4 已下载完成")
 			return match, "", nil
 		}
 	}
@@ -377,7 +391,8 @@ func (s *Server) resolveBilibiliDirectURL(sourceURL string) (string, error) {
 	return direct.URL, nil
 }
 
-func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string, onDirectURL directURLCallback) (string, string, error) {
+func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirectURL directURLCallback) (string, string, error) {
+	sourceURL := job.SourceURL
 	bvid := bvidPattern.FindString(sourceURL)
 	if bvid == "" {
 		return "", "", errors.New("no BV id found in URL")
@@ -402,14 +417,7 @@ func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string, onDirec
 				onDirectURL(direct.URL)
 			}
 			target := filepath.Join(workDir, "source.mp4")
-			headers := fmt.Sprintf("Referer: %s\r\nUser-Agent: %s\r\n", sourceURL, s.cfg.YTDLPUserAgent)
-			if err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
-				"-y",
-				"-headers", headers,
-				"-i", direct.URL,
-				"-c", "copy",
-				"-movflags", "+faststart",
-				target); err == nil {
+			if err := s.downloadDirectMP4(job.ID, direct.URL, sourceURL, target, direct.Size); err == nil {
 				return target, direct.URL, nil
 			} else {
 				_ = os.Remove(target)
@@ -440,6 +448,7 @@ func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string, onDirec
 
 	target := filepath.Join(workDir, "source.mp4")
 	headers := fmt.Sprintf("Referer: %s\r\nUser-Agent: %s\r\n", sourceURL, s.cfg.YTDLPUserAgent)
+	s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在下载并整理 MP4...")
 	if err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
 		"-y",
 		"-headers", headers,
@@ -452,6 +461,61 @@ func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string, onDirec
 		return "", "", err
 	}
 	return target, "", nil
+}
+
+func (s *Server) downloadDirectMP4(jobID, rawURL, referer, target string, expectedSize int64) error {
+	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.JobTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", s.cfg.YTDLPUserAgent)
+	req.Header.Set("Referer", referer)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("download MP4 returned HTTP %d", resp.StatusCode)
+	}
+
+	total := expectedSize
+	if total <= 0 {
+		total = resp.ContentLength
+	}
+
+	file, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	report := s.throttledProgress(jobID, "download", "下载 MP4")
+	report(0, total)
+	buf := make([]byte, 1024*128)
+	var done int64
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, err := file.Write(buf[:n]); err != nil {
+				return err
+			}
+			done += int64(n)
+			report(done, total)
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
+	report(done, done)
+	return file.Close()
 }
 
 func (s *Server) fetchBilibiliJSON(client *http.Client, rawURL, referer string, target any) error {
@@ -527,23 +591,100 @@ func (s *Server) getJob(id string) (*Job, bool) {
 	if !ok {
 		return nil, false
 	}
-	copy := *job
-	return &copy, true
+	return cloneJob(job), true
 }
 
 func (s *Server) updateJob(id string, mutate func(*Job)) {
+	var snapshot *Job
 	s.mu.Lock()
 	job := s.jobs[id]
 	if job != nil {
 		mutate(job)
 		job.UpdatedAt = time.Now().UTC()
+		snapshot = cloneJob(job)
 	}
 	s.mu.Unlock()
-	if job != nil {
-		if err := s.saveJob(job); err != nil {
+	if snapshot != nil {
+		if err := s.saveJob(snapshot); err != nil {
 			log.Printf("failed to save job %s: %v", id, err)
 		}
 	}
+}
+
+func cloneJob(job *Job) *Job {
+	if job == nil {
+		return nil
+	}
+	copy := *job
+	if job.Progress != nil {
+		copy.Progress = make(JobProgress, len(job.Progress))
+		for key, step := range job.Progress {
+			copy.Progress[key] = step
+		}
+	}
+	return &copy
+}
+
+func setProgressStep(job *Job, key string, step ProgressStep) {
+	if job.Progress == nil {
+		job.Progress = JobProgress{}
+	}
+	if step.BytesTotal > 0 {
+		percent := int(step.BytesDone * 100 / step.BytesTotal)
+		if percent < 0 {
+			percent = 0
+		}
+		if percent > 100 {
+			percent = 100
+		}
+		step.Percent = percent
+	}
+	job.Progress[key] = step
+}
+
+func (s *Server) setJobProgress(id, key, label, state string, done, total int64, message string) {
+	s.updateJob(id, func(j *Job) {
+		setProgressStep(j, key, ProgressStep{
+			Label:      label,
+			State:      state,
+			BytesDone:  done,
+			BytesTotal: total,
+			Message:    message,
+		})
+	})
+}
+
+func (s *Server) throttledProgress(id, key, label string) progressCallback {
+	var last time.Time
+	return func(done, total int64) {
+		now := time.Now()
+		if done != total && now.Sub(last) < 500*time.Millisecond {
+			return
+		}
+		last = now
+		message := "正在进行中..."
+		if total > 0 {
+			message = fmt.Sprintf("%s / %s", formatBytes(done), formatBytes(total))
+		}
+		state := "active"
+		if total > 0 && done >= total {
+			state = "done"
+		}
+		s.setJobProgress(id, key, label, state, done, total, message)
+	}
+}
+
+func formatBytes(value int64) string {
+	const unit = 1024
+	if value < unit {
+		return fmt.Sprintf("%d B", value)
+	}
+	div, exp := int64(unit), 0
+	for n := value / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(value)/float64(div), "KMGTPE"[exp])
 }
 
 func (s *Server) loadJobs() error {

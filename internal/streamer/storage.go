@@ -3,6 +3,7 @@ package streamer
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -16,8 +17,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
+type progressCallback func(done, total int64)
+
 type objectStorage interface {
-	UploadFile(sourcePath, key string) error
+	UploadFile(sourcePath, key string, onProgress progressCallback) error
 	PublicURL(key string) string
 }
 
@@ -48,12 +51,22 @@ func newObjectStorage(cfg Config) (objectStorage, error) {
 	}, nil
 }
 
-func (s *r2Storage) UploadFile(sourcePath, key string) error {
+func (s *r2Storage) UploadFile(sourcePath, key string, onProgress progressCallback) error {
 	file, err := os.Open(sourcePath)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	total := info.Size()
+	body := io.ReadSeeker(file)
+	if onProgress != nil {
+		onProgress(0, total)
+		body = &progressReadSeeker{file: file, total: total, onProgress: onProgress}
+	}
 
 	contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(sourcePath)))
 	if contentType == "" {
@@ -67,7 +80,7 @@ func (s *r2Storage) UploadFile(sourcePath, key string) error {
 	_, err = s.client.PutObjectWithContext(ctx, &s3.PutObjectInput{
 		Bucket:       aws.String(s.cfg.R2Bucket),
 		Key:          aws.String(key),
-		Body:         file,
+		Body:         body,
 		ContentType:  aws.String(contentType),
 		CacheControl: aws.String(s.cfg.R2CacheControl),
 	})
@@ -75,7 +88,35 @@ func (s *r2Storage) UploadFile(sourcePath, key string) error {
 		return fmt.Errorf("upload %s to R2 key %s: %w", sourcePath, key, err)
 	}
 	log.Printf("uploaded %s to R2 key %s", sourcePath, key)
+	if onProgress != nil {
+		onProgress(total, total)
+	}
 	return nil
+}
+
+type progressReadSeeker struct {
+	file       *os.File
+	total      int64
+	read       int64
+	onProgress progressCallback
+}
+
+func (r *progressReadSeeker) Read(p []byte) (int, error) {
+	n, err := r.file.Read(p)
+	if n > 0 {
+		r.read += int64(n)
+		r.onProgress(r.read, r.total)
+	}
+	return n, err
+}
+
+func (r *progressReadSeeker) Seek(offset int64, whence int) (int64, error) {
+	pos, err := r.file.Seek(offset, whence)
+	if err == nil {
+		r.read = pos
+		r.onProgress(r.read, r.total)
+	}
+	return pos, err
 }
 
 func (s *r2Storage) PublicURL(key string) string {
@@ -94,7 +135,7 @@ func (s *Server) publishMedia(job *Job) (string, error) {
 	prefix := s.mediaObjectPrefix(job)
 	if job.Format == FormatMP4 {
 		key := prefix + "/video.mp4"
-		if err := s.storage.UploadFile(filepath.Join(workDir, "video.mp4"), key); err != nil {
+		if err := s.storage.UploadFile(filepath.Join(workDir, "video.mp4"), key, s.throttledProgress(job.ID, "upload", "上传到 R2")); err != nil {
 			return "", err
 		}
 		return s.storage.PublicURL(key), nil
@@ -104,6 +145,24 @@ func (s *Server) publishMedia(job *Job) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	var totalBytes int64
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if ext != ".m3u8" && ext != ".ts" {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return "", err
+		}
+		totalBytes += info.Size()
+	}
+
+	var uploadedBytes int64
+	reportUpload := s.throttledProgress(job.ID, "upload", "上传到 R2")
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -113,7 +172,14 @@ func (s *Server) publishMedia(job *Job) (string, error) {
 			continue
 		}
 		key := prefix + "/" + entry.Name()
-		if err := s.storage.UploadFile(filepath.Join(workDir, entry.Name()), key); err != nil {
+		base := uploadedBytes
+		sourcePath := filepath.Join(workDir, entry.Name())
+		if err := s.storage.UploadFile(sourcePath, key, func(done, total int64) {
+			reportUpload(base+done, totalBytes)
+			if done == total {
+				uploadedBytes = base + total
+			}
+		}); err != nil {
 			return "", err
 		}
 	}
@@ -140,7 +206,7 @@ func (s *Server) CheckStorage() (string, error) {
 	}
 
 	key := strings.Trim(strings.Join([]string{s.cfg.R2KeyPrefix, "_healthcheck.txt"}, "/"), "/")
-	if err := s.storage.UploadFile(file.Name(), key); err != nil {
+	if err := s.storage.UploadFile(file.Name(), key, nil); err != nil {
 		return "", err
 	}
 	return s.storage.PublicURL(key), nil

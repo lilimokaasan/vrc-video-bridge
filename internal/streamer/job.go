@@ -28,11 +28,23 @@ type Job struct {
 	Format      OutputFormat `json:"format"`
 	Status      JobStatus    `json:"status"`
 	Message     string       `json:"message,omitempty"`
+	Progress    JobProgress  `json:"progress,omitempty"`
 	DirectURL   string       `json:"direct_url,omitempty"`
 	PlaybackURL string       `json:"playback_url,omitempty"`
 	Error       string       `json:"error,omitempty"`
 	CreatedAt   time.Time    `json:"created_at"`
 	UpdatedAt   time.Time    `json:"updated_at"`
+}
+
+type JobProgress map[string]ProgressStep
+
+type ProgressStep struct {
+	Label      string `json:"label"`
+	State      string `json:"state"`
+	Percent    int    `json:"percent,omitempty"`
+	BytesDone  int64  `json:"bytes_done,omitempty"`
+	BytesTotal int64  `json:"bytes_total,omitempty"`
+	Message    string `json:"message,omitempty"`
 }
 
 type CreateJobRequest struct {
