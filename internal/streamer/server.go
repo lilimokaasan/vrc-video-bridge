@@ -149,7 +149,7 @@ func (s *Server) runJob(id string) {
 	}
 	s.updateJob(job.ID, func(j *Job) {
 		j.Status = StatusRunning
-		j.Message = "Preparing media"
+		j.Message = "正在寻找这段视频..."
 		j.Error = ""
 	})
 
@@ -157,7 +157,7 @@ func (s *Server) runJob(id string) {
 		s.updateJob(job.ID, func(j *Job) {
 			j.DirectURL = directURL
 			if directURL != "" {
-				j.Message = "Temporary MP4 link is ready, downloading media"
+				j.Message = "先到的小纸条已经找到，正在整理视频..."
 			}
 		})
 	})
@@ -173,9 +173,9 @@ func (s *Server) runJob(id string) {
 	s.updateJob(job.ID, func(j *Job) {
 		j.DirectURL = directURL
 		if directURL != "" {
-			j.Message = "Temporary MP4 link is ready, uploading to R2"
+			j.Message = "视频已经整理好，正在准备分享链接..."
 		} else {
-			j.Message = "Media is ready, uploading to storage"
+			j.Message = "视频已经整理好，正在准备分享链接..."
 		}
 	})
 

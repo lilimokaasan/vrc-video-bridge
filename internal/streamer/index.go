@@ -5,7 +5,7 @@ const indexHTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>KoiMoe VRChat Video</title>
+  <title>KoiMoe Link Room</title>
   <style>
     :root {
       --pink: #fb98c0;
@@ -438,23 +438,23 @@ const indexHTML = `<!doctype html>
       <div class="brand">
         <div class="mark" aria-hidden="true">桜</div>
         <div>
-          <p class="brand-title">KoiMoe VRChat Video</p>
-          <p class="brand-subtitle">恋と萌えの小さな変換室</p>
+          <p class="brand-title">KoiMoe Link Room</p>
+          <p class="brand-subtitle">恋と萌えの小さな場所</p>
         </div>
       </div>
-      <div class="status-pill" id="r2Hint">R2 public links when configured</div>
+      <div class="status-pill" id="r2Hint">把喜欢的片段轻轻收好</div>
     </header>
 
     <main>
       <section class="converter panel" aria-labelledby="title">
-        <p class="eyebrow">Bilibili → VRChat Player</p>
-        <h1 id="title">把一段视频，轻轻递到 VRChat 里。</h1>
-        <p class="lead">贴入 Bilibili 视频地址，服务会在后台生成 VRChat 播放器可用的链接。配置 R2 后，完成时会返回公开对象存储地址。</p>
+        <p class="eyebrow">A little room for shared moments</p>
+        <h1 id="title">把喜欢的视频，轻轻递到小房间里。</h1>
+        <p class="lead">贴入一条 Bilibili 地址，稍等片刻，就会整理出可以分享给朋友一起看的链接。</p>
 
         <form id="convertForm">
           <div class="input-wrap">
             <input id="url" name="url" autocomplete="off" required placeholder="https://www.bilibili.com/video/BV..." />
-            <button class="submit" id="submit" type="submit">开始转换</button>
+            <button class="submit" id="submit" type="submit">轻轻整理</button>
           </div>
 
           <div class="options" aria-label="输出格式">
@@ -462,18 +462,18 @@ const indexHTML = `<!doctype html>
               <label><input type="radio" name="format" value="hls" checked />HLS</label>
               <label><input type="radio" name="format" value="mp4" />MP4</label>
             </div>
-            <span class="hint">HLS 更适合尝试 VRChat；MP4 文件更简单。</span>
+            <span class="hint">默认选项更适合在线播放；MP4 更像一份单独的小文件。</span>
           </div>
         </form>
 
         <div class="result" id="result">
-          <p class="result-label">HTML5 progressive MP4 临时直链</p>
+          <p class="result-label">先到的小纸条</p>
           <div class="result-row">
             <a id="direct" href="#" target="_blank" rel="noreferrer"></a>
             <button class="copy-link" data-copy-target="direct" type="button">复制</button>
           </div>
 
-          <p class="result-label">R2 播放地址</p>
+          <p class="result-label">整理好的分享链接</p>
           <div class="result-row">
             <a id="playback" href="#" target="_blank" rel="noreferrer"></a>
             <button class="copy-link" data-copy-target="playback" type="button">复制</button>
@@ -484,22 +484,22 @@ const indexHTML = `<!doctype html>
       <aside class="side">
         <section class="note panel">
           <h2>小小流程</h2>
-          <p>页面会创建任务并等待它完成。你可以把最终链接贴进 VRChat 视频播放器。</p>
+          <p>页面会先找到视频的临时入口，再慢慢整理成更安稳的分享链接。</p>
           <div class="steps">
-            <div class="step"><span class="dot">1</span><span>解析 Bilibili 视频</span></div>
-            <div class="step"><span class="dot">2</span><span>生成 HLS 或 MP4</span></div>
-            <div class="step"><span class="dot">3</span><span>上传 R2 或使用本地链接</span></div>
+            <div class="step"><span class="dot">1</span><span>找到视频入口</span></div>
+            <div class="step"><span class="dot">2</span><span>整理成可播放的片段</span></div>
+            <div class="step"><span class="dot">3</span><span>送出一条分享链接</span></div>
           </div>
         </section>
 
         <section class="note panel">
-          <h2>任务状态</h2>
-          <pre class="log" id="log">等待一条 Bilibili 链接...</pre>
+          <h2>小小回声</h2>
+          <pre class="log" id="log">等一条想分享的视频链接...</pre>
         </section>
       </aside>
     </main>
 
-    <footer>Soft links for tiny rooms and shared songs.</footer>
+    <footer>A soft diary for tiny heartbeats, favorite things, and shared moments.</footer>
   </div>
 
   <script>
@@ -514,9 +514,8 @@ const indexHTML = `<!doctype html>
 
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-    function setLog(message, detail) {
-      const suffix = detail ? '\n\n' + JSON.stringify(detail, null, 2) : '';
-      log.textContent = message + suffix;
+    function setLog(message) {
+      log.textContent = message;
     }
 
     function updateProgress() {
@@ -553,8 +552,8 @@ const indexHTML = `<!doctype html>
     }
 
     function renderLinks(job) {
-      setLink(direct, job.direct_url, '等待解析出临时直链...');
-      setLink(playback, job.playback_url, '等待上传到 R2...');
+      setLink(direct, job.direct_url, '正在寻找视频入口...');
+      setLink(playback, job.playback_url, '正在整理分享链接...');
       if (job.direct_url || job.playback_url) {
         result.classList.add('is-visible');
       }
@@ -567,7 +566,7 @@ const indexHTML = `<!doctype html>
         body: JSON.stringify({ url, format })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '任务创建失败');
+      if (!res.ok) throw new Error(data.error || '这条链接暂时没有接住');
       return data;
     }
 
@@ -575,19 +574,19 @@ const indexHTML = `<!doctype html>
       for (;;) {
         const res = await fetch(statusURL);
         const job = await res.json();
-        if (!res.ok) throw new Error(job.error || '任务查询失败');
+        if (!res.ok) throw new Error(job.error || '还没有听见回声');
         renderLinks(job);
 
         if (job.status === 'ready') {
-          setLog('转换完成。链接已经准备好啦。', job);
+          setLog('已经整理好啦，可以拿去分享了。', job);
           return;
         }
         if (job.status === 'failed') {
-          setLog('转换失败。', job);
-          throw new Error(job.error || '转换失败');
+          setLog('这次没有整理成功。', job);
+          throw new Error(job.error || '这次没有整理成功');
         }
 
-        setLog(job.message || '正在转换中，请稍等...', job);
+        setLog(job.message || '正在轻轻整理中，请稍等...', job);
         await sleep(2500);
       }
     }
@@ -595,25 +594,25 @@ const indexHTML = `<!doctype html>
     form.addEventListener('submit', async event => {
       event.preventDefault();
       result.classList.remove('is-visible');
-      setLink(direct, '', '等待解析出临时直链...');
-      setLink(playback, '', '等待上传到 R2...');
+      setLink(direct, '', '正在寻找视频入口...');
+      setLink(playback, '', '正在整理分享链接...');
       result.classList.add('is-visible');
       submit.disabled = true;
-      submit.textContent = '转换中...';
+      submit.textContent = '整理中...';
 
       const url = document.querySelector('#url').value.trim();
       const format = new FormData(form).get('format');
 
       try {
-        setLog('正在创建任务...');
+        setLog('正在把这条链接放进小托盘...');
         const job = await createJob(url, format);
-        setLog('任务已经创建，开始等待生成链接...', job);
+        setLog('已经收到啦，正在轻轻整理...', job);
         await poll(job.status_url.replace(location.origin, ''));
       } catch (error) {
         setLog(error.message);
       } finally {
         submit.disabled = false;
-        submit.textContent = '开始转换';
+        submit.textContent = '轻轻整理';
       }
     });
 
