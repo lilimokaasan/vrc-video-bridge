@@ -278,11 +278,19 @@ type bilibiliPlayURLResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
+		DURL []bilibiliDirectStream `json:"durl"`
 		Dash struct {
 			Video []bilibiliDashStream `json:"video"`
 			Audio []bilibiliDashStream `json:"audio"`
 		} `json:"dash"`
 	} `json:"data"`
+}
+
+type bilibiliDirectStream struct {
+	URL       string   `json:"url"`
+	Size      int64    `json:"size"`
+	Length    int      `json:"length"`
+	BackupURL []string `json:"backup_url"`
 }
 
 type bilibiliDashStream struct {
@@ -304,6 +312,31 @@ func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string) (string
 	}
 	if view.Code != 0 || view.Data.CID == 0 {
 		return "", fmt.Errorf("view API returned code %d: %s", view.Code, view.Message)
+	}
+
+	progressiveURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=64&platform=html5&high_quality=1", url.QueryEscape(bvid), view.Data.CID)
+	var progressive bilibiliPlayURLResponse
+	if err := s.fetchBilibiliJSON(client, progressiveURL, sourceURL, &progressive); err == nil {
+		if progressive.Code != 0 {
+			log.Printf("Bilibili progressive playurl API returned code %d: %s", progressive.Code, progressive.Message)
+		} else if direct := selectDirectStream(progressive.Data.DURL); direct.URL != "" {
+			target := filepath.Join(workDir, "source.mp4")
+			headers := fmt.Sprintf("Referer: %s\r\nUser-Agent: %s\r\n", sourceURL, s.cfg.YTDLPUserAgent)
+			if err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
+				"-y",
+				"-headers", headers,
+				"-i", direct.URL,
+				"-c", "copy",
+				"-movflags", "+faststart",
+				target); err == nil {
+				return target, nil
+			} else {
+				_ = os.Remove(target)
+				log.Printf("Bilibili progressive MP4 download failed, falling back to DASH: %v", err)
+			}
+		}
+	} else {
+		log.Printf("Bilibili progressive playurl API failed, falling back to DASH: %v", err)
 	}
 
 	playURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=64&fnval=16&fourk=1", url.QueryEscape(bvid), view.Data.CID)
@@ -354,6 +387,19 @@ func (s *Server) fetchBilibiliJSON(client *http.Client, rawURL, referer string, 
 		return fmt.Errorf("Bilibili API returned HTTP %d", resp.StatusCode)
 	}
 	return json.NewDecoder(resp.Body).Decode(target)
+}
+
+func selectDirectStream(streams []bilibiliDirectStream) bilibiliDirectStream {
+	var selected bilibiliDirectStream
+	for _, stream := range streams {
+		if stream.URL == "" {
+			continue
+		}
+		if stream.Size > selected.Size {
+			selected = stream
+		}
+	}
+	return selected
 }
 
 func selectDashStream(streams []bilibiliDashStream, codecPrefix string) bilibiliDashStream {

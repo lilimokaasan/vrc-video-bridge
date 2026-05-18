@@ -62,7 +62,7 @@ func LoadConfig() Config {
 		R2PublicBaseURL:   strings.TrimRight(envString("R2_PUBLIC_BASE_URL", ""), "/"),
 		R2KeyPrefix:       strings.Trim(envString("R2_KEY_PREFIX", "vrchat"), "/"),
 		R2CacheControl:    envString("R2_CACHE_CONTROL", "public, max-age=86400"),
-		R2UploadTimeout:   time.Duration(envInt("R2_UPLOAD_TIMEOUT_SECONDS", 120)) * time.Second,
+		R2UploadTimeout:   time.Duration(envInt("R2_UPLOAD_TIMEOUT_SECONDS", 600)) * time.Second,
 	}
 }
 

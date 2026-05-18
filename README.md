@@ -108,7 +108,7 @@ Environment variables:
 | `R2_PUBLIC_BASE_URL` | empty | Public base URL for the bucket or custom domain, such as `https://video.example.com`. |
 | `R2_KEY_PREFIX` | `vrchat` | Object key prefix used before `BVxxxx/mp4/video.mp4` or `BVxxxx/hls/index.m3u8`. |
 | `R2_CACHE_CONTROL` | `public, max-age=86400` | Cache-Control metadata applied to uploaded objects. |
-| `R2_UPLOAD_TIMEOUT_SECONDS` | `120` | Timeout for each R2 upload request. |
+| `R2_UPLOAD_TIMEOUT_SECONDS` | `600` | Timeout for each R2 upload request. |
 
 ## Cloudflare R2 Mode
 
