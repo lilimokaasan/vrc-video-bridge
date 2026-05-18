@@ -50,6 +50,9 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Fprintf(os.Stdout, "downloaded: %s\n", result.OutputPath)
+		if result.DirectURL != "" {
+			fmt.Fprintf(os.Stdout, "direct_url: %s\n", result.DirectURL)
+		}
 		if result.PlaybackURL != "" {
 			fmt.Fprintf(os.Stdout, "playback_url: %s\n", result.PlaybackURL)
 		}

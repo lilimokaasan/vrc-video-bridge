@@ -153,7 +153,8 @@ func (s *Server) runJob(id string) {
 		j.Error = ""
 	})
 
-	if err := s.prepareMedia(job); err != nil {
+	directURL, err := s.prepareMedia(job)
+	if err != nil {
 		s.updateJob(job.ID, func(j *Job) {
 			j.Status = StatusFailed
 			j.Message = ""
@@ -163,7 +164,12 @@ func (s *Server) runJob(id string) {
 	}
 
 	s.updateJob(job.ID, func(j *Job) {
-		j.Message = "Media is ready, uploading to storage"
+		j.DirectURL = directURL
+		if directURL != "" {
+			j.Message = "Temporary MP4 link is ready, uploading to R2"
+		} else {
+			j.Message = "Media is ready, uploading to storage"
+		}
 	})
 
 	playbackURL, err := s.publishMedia(job)
@@ -183,31 +189,31 @@ func (s *Server) runJob(id string) {
 	})
 }
 
-func (s *Server) prepareMedia(job *Job) error {
+func (s *Server) prepareMedia(job *Job) (string, error) {
 	workDir, err := filepath.Abs(filepath.Join(s.cfg.mediaDir(), job.ID))
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := os.MkdirAll(workDir, 0755); err != nil {
-		return err
+		return "", err
 	}
 
-	sourcePath, err := s.downloadVideo(job.SourceURL, workDir)
+	sourcePath, directURL, err := s.downloadVideo(job.SourceURL, workDir)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if job.Format == FormatMP4 {
 		target := filepath.Join(workDir, "video.mp4")
 		if filepath.Clean(sourcePath) == filepath.Clean(target) {
-			return nil
+			return directURL, nil
 		}
-		return runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
+		return directURL, runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
 			"-y", "-i", sourcePath, "-c", "copy", "-movflags", "+faststart", target)
 	}
 
 	indexPath := filepath.Join(workDir, "index.m3u8")
-	return runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
+	return directURL, runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
 		"-y", "-i", sourcePath,
 		"-c", "copy",
 		"-start_number", "0",
@@ -217,10 +223,10 @@ func (s *Server) prepareMedia(job *Job) error {
 		indexPath)
 }
 
-func (s *Server) downloadVideo(sourceURL, workDir string) (string, error) {
+func (s *Server) downloadVideo(sourceURL, workDir string) (string, string, error) {
 	if bvidPattern.MatchString(sourceURL) {
-		if sourcePath, err := s.downloadVideoWithBilibiliAPI(sourceURL, workDir); err == nil {
-			return sourcePath, nil
+		if sourcePath, directURL, err := s.downloadVideoWithBilibiliAPI(sourceURL, workDir); err == nil {
+			return sourcePath, directURL, nil
 		}
 	}
 
@@ -243,25 +249,25 @@ func (s *Server) downloadVideo(sourceURL, workDir string) (string, error) {
 
 	err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.YTDLPPath, args...)
 	if err != nil {
-		if sourcePath, fallbackErr := s.downloadVideoWithBilibiliAPI(sourceURL, workDir); fallbackErr == nil {
-			return sourcePath, nil
+		if sourcePath, directURL, fallbackErr := s.downloadVideoWithBilibiliAPI(sourceURL, workDir); fallbackErr == nil {
+			return sourcePath, directURL, nil
 		} else if s.cfg.YTDLPCookiesFile == "" && s.cfg.YTDLPCookiesFromBrowser == "" {
-			return "", fmt.Errorf("%w\nBilibili API fallback also failed: %v\nTry exporting browser cookies and setting YTDLP_COOKIES_FILE, or set YTDLP_COOKIES_FROM_BROWSER when yt-dlp can read your browser profile", err, fallbackErr)
+			return "", "", fmt.Errorf("%w\nBilibili API fallback also failed: %v\nTry exporting browser cookies and setting YTDLP_COOKIES_FILE, or set YTDLP_COOKIES_FROM_BROWSER when yt-dlp can read your browser profile", err, fallbackErr)
 		}
-		return "", err
+		return "", "", err
 	}
 
 	matches, err := filepath.Glob(filepath.Join(workDir, "source.*"))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	for _, match := range matches {
 		ext := strings.ToLower(filepath.Ext(match))
 		if ext == ".mp4" || ext == ".mkv" || ext == ".webm" {
-			return match, nil
+			return match, "", nil
 		}
 	}
-	return "", errors.New("yt-dlp completed but no media file was produced")
+	return "", "", errors.New("yt-dlp completed but no media file was produced")
 }
 
 var bvidPattern = regexp.MustCompile(`(?i)BV[0-9A-Za-z]+`)
@@ -299,19 +305,19 @@ type bilibiliDashStream struct {
 	Bandwidth int    `json:"bandwidth"`
 }
 
-func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string) (string, error) {
+func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string) (string, string, error) {
 	bvid := bvidPattern.FindString(sourceURL)
 	if bvid == "" {
-		return "", errors.New("no BV id found in URL")
+		return "", "", errors.New("no BV id found in URL")
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	var view bilibiliViewResponse
 	if err := s.fetchBilibiliJSON(client, "https://api.bilibili.com/x/web-interface/view?bvid="+url.QueryEscape(bvid), sourceURL, &view); err != nil {
-		return "", err
+		return "", "", err
 	}
 	if view.Code != 0 || view.Data.CID == 0 {
-		return "", fmt.Errorf("view API returned code %d: %s", view.Code, view.Message)
+		return "", "", fmt.Errorf("view API returned code %d: %s", view.Code, view.Message)
 	}
 
 	progressiveURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=64&platform=html5&high_quality=1", url.QueryEscape(bvid), view.Data.CID)
@@ -329,7 +335,7 @@ func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string) (string
 				"-c", "copy",
 				"-movflags", "+faststart",
 				target); err == nil {
-				return target, nil
+				return target, direct.URL, nil
 			} else {
 				_ = os.Remove(target)
 				log.Printf("Bilibili progressive MP4 download failed, falling back to DASH: %v", err)
@@ -342,16 +348,16 @@ func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string) (string
 	playURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=64&fnval=16&fourk=1", url.QueryEscape(bvid), view.Data.CID)
 	var play bilibiliPlayURLResponse
 	if err := s.fetchBilibiliJSON(client, playURL, sourceURL, &play); err != nil {
-		return "", err
+		return "", "", err
 	}
 	if play.Code != 0 {
-		return "", fmt.Errorf("playurl API returned code %d: %s", play.Code, play.Message)
+		return "", "", fmt.Errorf("playurl API returned code %d: %s", play.Code, play.Message)
 	}
 
 	video := selectDashStream(play.Data.Dash.Video, "avc1")
 	audio := selectDashStream(play.Data.Dash.Audio, "mp4a")
 	if video.BaseURL == "" || audio.BaseURL == "" {
-		return "", errors.New("playurl API did not return usable H.264/AAC streams")
+		return "", "", errors.New("playurl API did not return usable H.264/AAC streams")
 	}
 
 	target := filepath.Join(workDir, "source.mp4")
@@ -365,9 +371,9 @@ func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string) (string
 		"-c", "copy",
 		"-movflags", "+faststart",
 		target); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return target, nil
+	return target, "", nil
 }
 
 func (s *Server) fetchBilibiliJSON(client *http.Client, rawURL, referer string, target any) error {

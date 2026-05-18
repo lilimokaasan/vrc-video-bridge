@@ -306,6 +306,10 @@ const indexHTML = `<!doctype html>
       font-size: 12px;
     }
 
+    .result-label:not(:first-child) {
+      margin-top: 14px;
+    }
+
     .result-row {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -451,10 +455,16 @@ const indexHTML = `<!doctype html>
         </form>
 
         <div class="result" id="result">
-          <p class="result-label">可播放链接</p>
+          <p class="result-label">HTML5 progressive MP4 临时直链</p>
+          <div class="result-row">
+            <a id="direct" href="#" target="_blank" rel="noreferrer"></a>
+            <button class="copy-link" data-copy-target="direct" type="button">复制</button>
+          </div>
+
+          <p class="result-label">R2 播放地址</p>
           <div class="result-row">
             <a id="playback" href="#" target="_blank" rel="noreferrer"></a>
-            <button class="copy-link" id="copy" type="button">复制</button>
+            <button class="copy-link" data-copy-target="playback" type="button">复制</button>
           </div>
         </div>
       </section>
@@ -485,8 +495,9 @@ const indexHTML = `<!doctype html>
     const submit = document.querySelector('#submit');
     const log = document.querySelector('#log');
     const result = document.querySelector('#result');
+    const direct = document.querySelector('#direct');
     const playback = document.querySelector('#playback');
-    const copy = document.querySelector('#copy');
+    const copyButtons = document.querySelectorAll('[data-copy-target]');
     const progress = document.querySelector('.scrollbar-progress');
 
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -499,6 +510,24 @@ const indexHTML = `<!doctype html>
     function updateProgress() {
       const max = document.documentElement.scrollHeight - window.innerHeight;
       progress.style.transform = 'scaleX(' + (max > 0 ? window.scrollY / max : 0) + ')';
+    }
+
+    function setLink(anchor, url, waitingText) {
+      if (url) {
+        anchor.href = url;
+        anchor.textContent = url;
+      } else {
+        anchor.removeAttribute('href');
+        anchor.textContent = waitingText;
+      }
+    }
+
+    function renderLinks(job) {
+      setLink(direct, job.direct_url, '等待解析出临时直链...');
+      setLink(playback, job.playback_url, '等待上传到 R2...');
+      if (job.direct_url || job.playback_url) {
+        result.classList.add('is-visible');
+      }
     }
 
     async function createJob(url, format) {
@@ -517,12 +546,10 @@ const indexHTML = `<!doctype html>
         const res = await fetch(statusURL);
         const job = await res.json();
         if (!res.ok) throw new Error(job.error || '任务查询失败');
+        renderLinks(job);
 
         if (job.status === 'ready') {
           setLog('转换完成。链接已经准备好啦。', job);
-          playback.href = job.playback_url;
-          playback.textContent = job.playback_url;
-          result.classList.add('is-visible');
           return;
         }
         if (job.status === 'failed') {
@@ -538,6 +565,8 @@ const indexHTML = `<!doctype html>
     form.addEventListener('submit', async event => {
       event.preventDefault();
       result.classList.remove('is-visible');
+      setLink(direct, '', '等待解析出临时直链...');
+      setLink(playback, '', '等待上传到 R2...');
       submit.disabled = true;
       submit.textContent = '转换中...';
 
@@ -557,11 +586,15 @@ const indexHTML = `<!doctype html>
       }
     });
 
-    copy.addEventListener('click', async () => {
-      if (!playback.textContent) return;
-      await navigator.clipboard.writeText(playback.textContent);
-      copy.textContent = '已复制';
-      setTimeout(() => copy.textContent = '复制', 1200);
+    copyButtons.forEach(button => {
+      button.addEventListener('click', async () => {
+        const target = document.querySelector('#' + button.dataset.copyTarget);
+        const href = target ? target.getAttribute('href') : '';
+        if (!href) return;
+        await navigator.clipboard.writeText(href);
+        button.textContent = '已复制';
+        setTimeout(() => button.textContent = '复制', 1200);
+      });
     });
 
     window.addEventListener('scroll', updateProgress, { passive: true });
