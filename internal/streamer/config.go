@@ -1,6 +1,7 @@
 package streamer
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -33,6 +34,8 @@ type Config struct {
 }
 
 func LoadConfig() Config {
+	loadDotEnv(".env")
+
 	return Config{
 		Addr:                    envString("ADDR", ":8090"),
 		PublicBaseURL:           strings.TrimRight(envString("PUBLIC_BASE_URL", "http://localhost:8090"), "/"),
@@ -56,6 +59,36 @@ func LoadConfig() Config {
 		R2PublicBaseURL:   strings.TrimRight(envString("R2_PUBLIC_BASE_URL", ""), "/"),
 		R2KeyPrefix:       strings.Trim(envString("R2_KEY_PREFIX", "vrchat"), "/"),
 		R2CacheControl:    envString("R2_CACHE_CONTROL", "public, max-age=86400"),
+	}
+}
+
+func loadDotEnv(path string) {
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		value = strings.Trim(value, `"'`)
+		if key == "" {
+			continue
+		}
+		if _, exists := os.LookupEnv(key); exists {
+			continue
+		}
+		_ = os.Setenv(key, value)
 	}
 }
 
