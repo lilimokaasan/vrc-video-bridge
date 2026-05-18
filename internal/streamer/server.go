@@ -72,6 +72,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/jobs", s.handleCreateJob)
 	s.mux.HandleFunc("GET /api/jobs/{id}", s.handleGetJob)
 	s.mux.Handle("GET /media/", http.StripPrefix("/media/", http.FileServer(http.Dir(s.cfg.mediaDir()))))
+	s.mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(s.cfg.AssetsDir))))
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -209,6 +210,12 @@ func (s *Server) prepareMedia(job *Job) error {
 }
 
 func (s *Server) downloadVideo(sourceURL, workDir string) (string, error) {
+	if bvidPattern.MatchString(sourceURL) {
+		if sourcePath, err := s.downloadVideoWithBilibiliAPI(sourceURL, workDir); err == nil {
+			return sourcePath, nil
+		}
+	}
+
 	args := []string{
 		"--no-playlist",
 		"--restrict-filenames",

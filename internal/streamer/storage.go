@@ -3,6 +3,7 @@ package streamer
 import (
 	"fmt"
 	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,6 +32,8 @@ func newObjectStorage(cfg Config) (objectStorage, error) {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials:      credentials.NewStaticCredentials(cfg.R2AccessKeyID, cfg.R2SecretAccessKey, ""),
 		Endpoint:         aws.String(cfg.R2Endpoint),
+		HTTPClient:       &http.Client{Timeout: cfg.R2UploadTimeout},
+		MaxRetries:       aws.Int(2),
 		Region:           aws.String("auto"),
 		S3ForcePathStyle: aws.Bool(true),
 	})

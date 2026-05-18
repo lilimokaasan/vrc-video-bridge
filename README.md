@@ -89,6 +89,7 @@ Environment variables:
 | `ADDR` | `:8090` | HTTP listen address. |
 | `PUBLIC_BASE_URL` | `http://localhost:8090` | Public URL used to build playback links. Set this to your HTTPS domain behind Nginx. |
 | `DATA_DIR` | `data` | Job metadata and generated media directory. |
+| `ASSETS_DIR` | `web/assets` | Static assets used by the conversion page. |
 | `YTDLP_PATH` | `yt-dlp` | Path to yt-dlp. |
 | `YTDLP_COOKIES_FILE` | empty | Optional Netscape-format cookies file for videos that need login. |
 | `YTDLP_COOKIES_FROM_BROWSER` | empty | Optional browser cookie source, such as `chrome`, `edge`, or `firefox`. `YTDLP_COOKIES_FILE` takes priority. |
@@ -107,6 +108,7 @@ Environment variables:
 | `R2_PUBLIC_BASE_URL` | empty | Public base URL for the bucket or custom domain, such as `https://video.example.com`. |
 | `R2_KEY_PREFIX` | `vrchat` | Object key prefix used before `BVxxxx/mp4/video.mp4` or `BVxxxx/hls/index.m3u8`. |
 | `R2_CACHE_CONTROL` | `public, max-age=86400` | Cache-Control metadata applied to uploaded objects. |
+| `R2_UPLOAD_TIMEOUT_SECONDS` | `120` | Timeout for each R2 upload request. |
 
 ## Cloudflare R2 Mode
 

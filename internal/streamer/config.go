@@ -13,6 +13,7 @@ type Config struct {
 	Addr                    string
 	PublicBaseURL           string
 	DataDir                 string
+	AssetsDir               string
 	YTDLPPath               string
 	YTDLPCookiesFile        string
 	YTDLPCookiesFromBrowser string
@@ -31,6 +32,7 @@ type Config struct {
 	R2PublicBaseURL         string
 	R2KeyPrefix             string
 	R2CacheControl          string
+	R2UploadTimeout         time.Duration
 }
 
 func LoadConfig() Config {
@@ -40,6 +42,7 @@ func LoadConfig() Config {
 		Addr:                    envString("ADDR", ":8090"),
 		PublicBaseURL:           strings.TrimRight(envString("PUBLIC_BASE_URL", "http://localhost:8090"), "/"),
 		DataDir:                 envString("DATA_DIR", "data"),
+		AssetsDir:               envString("ASSETS_DIR", "web/assets"),
 		YTDLPPath:               envString("YTDLP_PATH", "yt-dlp"),
 		YTDLPCookiesFile:        envString("YTDLP_COOKIES_FILE", ""),
 		YTDLPCookiesFromBrowser: envString("YTDLP_COOKIES_FROM_BROWSER", ""),
@@ -59,6 +62,7 @@ func LoadConfig() Config {
 		R2PublicBaseURL:   strings.TrimRight(envString("R2_PUBLIC_BASE_URL", ""), "/"),
 		R2KeyPrefix:       strings.Trim(envString("R2_KEY_PREFIX", "vrchat"), "/"),
 		R2CacheControl:    envString("R2_CACHE_CONTROL", "public, max-age=86400"),
+		R2UploadTimeout:   time.Duration(envInt("R2_UPLOAD_TIMEOUT_SECONDS", 120)) * time.Second,
 	}
 }
 
