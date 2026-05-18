@@ -51,6 +51,16 @@ const indexHTML = `<!doctype html>
       z-index: -1;
     }
 
+    body::after {
+      content: "";
+      position: fixed;
+      inset: auto 0 0;
+      height: 34vh;
+      pointer-events: none;
+      background: linear-gradient(180deg, transparent, rgba(255,238,245,.64));
+      z-index: -1;
+    }
+
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #ffeeeb; }
     ::-webkit-scrollbar-thumb { background: var(--pink); border-radius: 25px; }
@@ -139,15 +149,29 @@ const indexHTML = `<!doctype html>
     }
 
     .panel {
+      position: relative;
+      overflow: hidden;
       border: 1px solid rgba(255,255,255,.82);
       background: var(--paper);
       box-shadow: var(--shadow);
       backdrop-filter: blur(18px);
     }
 
+    .panel::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.95), transparent);
+      pointer-events: none;
+    }
+
     .converter {
       border-radius: 18px;
       padding: clamp(24px, 4vw, 46px);
+      background:
+        linear-gradient(150deg, rgba(255,255,255,.88), rgba(255,247,251,.74) 52%, rgba(255,255,255,.78)),
+        var(--paper);
     }
 
     .eyebrow {
@@ -194,7 +218,7 @@ const indexHTML = `<!doctype html>
       border: 1px solid var(--line);
       border-radius: 15px;
       background: rgba(255,255,255,.72);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
+      box-shadow: 0 10px 28px rgba(251,152,192,.1), inset 0 1px 0 rgba(255,255,255,.9);
     }
 
     input {
@@ -248,17 +272,37 @@ const indexHTML = `<!doctype html>
     }
 
     .segmented {
+      position: relative;
       display: inline-grid;
       grid-template-columns: 1fr 1fr;
-      gap: 4px;
       padding: 4px;
       border-radius: 999px;
       border: 1px solid rgba(251,152,192,.22);
-      background: rgba(255,255,255,.62);
+      background: rgba(255,255,255,.72);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.95), 0 10px 22px rgba(251,152,192,.12);
+    }
+
+    .segmented-thumb {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: calc((100% - 8px) / 2);
+      height: calc(100% - 8px);
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--pink), #ffb1d2);
+      box-shadow: 0 8px 18px rgba(251,152,192,.32);
+      transform: translateX(0);
+      transition: transform .34s cubic-bezier(.22, .9, .28, 1), box-shadow .24s ease;
+      pointer-events: none;
+    }
+
+    .segmented[data-format="mp4"] .segmented-thumb {
+      transform: translateX(100%);
     }
 
     .segmented label {
       position: relative;
+      z-index: 1;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -269,6 +313,7 @@ const indexHTML = `<!doctype html>
       color: #967284;
       font-size: 13px;
       cursor: pointer;
+      transition: color .24s ease, transform .24s ease;
     }
 
     .segmented input {
@@ -280,8 +325,7 @@ const indexHTML = `<!doctype html>
 
     .segmented label:has(input:checked) {
       color: white;
-      background: var(--pink);
-      box-shadow: 0 8px 18px rgba(251,152,192,.28);
+      transform: translateY(-.5px);
     }
 
     .hint {
@@ -295,7 +339,8 @@ const indexHTML = `<!doctype html>
       padding: 16px;
       border-radius: 15px;
       border: 1px solid rgba(251,152,192,.22);
-      background: rgba(255,255,255,.68);
+      background: linear-gradient(180deg, rgba(255,255,255,.78), rgba(255,247,251,.66));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.88), 0 12px 30px rgba(251,152,192,.1);
     }
 
     .result.is-visible { display: block; }
@@ -315,6 +360,11 @@ const indexHTML = `<!doctype html>
       grid-template-columns: 1fr auto;
       gap: 10px;
       align-items: center;
+      min-height: 44px;
+      padding: 6px 6px 6px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(251,152,192,.14);
+      background: rgba(255,255,255,.58);
     }
 
     .result a {
@@ -342,8 +392,11 @@ const indexHTML = `<!doctype html>
       padding: 0 13px;
       border-radius: 10px;
       color: #b76083;
-      background: #ffeeeb;
+      background: linear-gradient(180deg, #fff4f6, #ffeeeb);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.82);
     }
+
+    .copy-link:hover { transform: translateY(-1px); box-shadow: 0 8px 16px rgba(251,152,192,.16); }
 
     .side {
       display: grid;
@@ -353,6 +406,7 @@ const indexHTML = `<!doctype html>
     .note {
       border-radius: 14px;
       padding: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,.76), rgba(255,248,251,.62));
     }
 
     .note h2 {
@@ -458,7 +512,8 @@ const indexHTML = `<!doctype html>
           </div>
 
           <div class="options" aria-label="输出格式">
-            <div class="segmented">
+            <div class="segmented" data-format="hls">
+              <span class="segmented-thumb" aria-hidden="true"></span>
               <label><input type="radio" name="format" value="hls" checked />HLS</label>
               <label><input type="radio" name="format" value="mp4" />MP4</label>
             </div>
@@ -510,6 +565,7 @@ const indexHTML = `<!doctype html>
     const direct = document.querySelector('#direct');
     const playback = document.querySelector('#playback');
     const copyButtons = document.querySelectorAll('[data-copy-target]');
+    const segmented = document.querySelector('.segmented');
     const progress = document.querySelector('.scrollbar-progress');
 
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -521,6 +577,11 @@ const indexHTML = `<!doctype html>
     function updateProgress() {
       const max = document.documentElement.scrollHeight - window.innerHeight;
       progress.style.transform = 'scaleX(' + (max > 0 ? window.scrollY / max : 0) + ')';
+    }
+
+    function syncFormatControl() {
+      const selected = new FormData(form).get('format') || 'hls';
+      segmented.dataset.format = selected;
     }
 
     function compactURL(url) {
@@ -616,6 +677,10 @@ const indexHTML = `<!doctype html>
       }
     });
 
+    form.querySelectorAll('input[name="format"]').forEach(input => {
+      input.addEventListener('change', syncFormatControl);
+    });
+
     copyButtons.forEach(button => {
       button.addEventListener('click', async () => {
         const target = document.querySelector('#' + button.dataset.copyTarget);
@@ -639,6 +704,7 @@ const indexHTML = `<!doctype html>
 
     window.addEventListener('scroll', updateProgress, { passive: true });
     window.addEventListener('resize', updateProgress);
+    syncFormatControl();
     updateProgress();
   </script>
 </body>
