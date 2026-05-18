@@ -159,7 +159,10 @@ func (s *Server) runJob(id string) {
 }
 
 func (s *Server) prepareMedia(job *Job) error {
-	workDir := filepath.Join(s.cfg.mediaDir(), job.ID)
+	workDir, err := filepath.Abs(filepath.Join(s.cfg.mediaDir(), job.ID))
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(workDir, 0755); err != nil {
 		return err
 	}
@@ -190,21 +193,28 @@ func (s *Server) prepareMedia(job *Job) error {
 }
 
 func (s *Server) downloadVideo(sourceURL, workDir string) (string, error) {
-	outputTemplate := filepath.Join(workDir, "source.%(ext)s")
 	args := []string{
 		"--no-playlist",
 		"--restrict-filenames",
 		"--merge-output-format", "mp4",
-		"-f", "bv*+ba/b",
-		"-o", outputTemplate,
+		"--add-header", "Referer:" + s.cfg.YTDLPReferer,
+		"--user-agent", s.cfg.YTDLPUserAgent,
+		"-f", s.cfg.FormatSelector,
+		"-o", "source.%(ext)s",
 	}
 	if s.cfg.YTDLPCookiesFile != "" {
 		args = append(args, "--cookies", s.cfg.YTDLPCookiesFile)
+	} else if s.cfg.YTDLPCookiesFromBrowser != "" {
+		args = append(args, "--cookies-from-browser", s.cfg.YTDLPCookiesFromBrowser)
 	}
+	args = append(args, s.cfg.YTDLPExtraArgs...)
 	args = append(args, sourceURL)
 
 	err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.YTDLPPath, args...)
 	if err != nil {
+		if strings.Contains(err.Error(), "HTTP Error 412") && s.cfg.YTDLPCookiesFile == "" && s.cfg.YTDLPCookiesFromBrowser == "" {
+			return "", fmt.Errorf("%w\nBilibili returned HTTP 412. Try exporting browser cookies and setting YTDLP_COOKIES_FILE, or set YTDLP_COOKIES_FROM_BROWSER when yt-dlp can read your browser profile", err)
+		}
 		return "", err
 	}
 
