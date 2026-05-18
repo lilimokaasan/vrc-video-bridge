@@ -1,17 +1,42 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"bili-vrc-streamer/internal/streamer"
 )
 
 func main() {
+	downloadURL := flag.String("download", "", "download one Bilibili URL and exit")
+	format := flag.String("format", "mp4", "output format for direct download: mp4 or hls")
+	outputDir := flag.String("output", "downloads", "output directory for direct downloads")
+	flag.Parse()
+
 	cfg := streamer.LoadConfig()
 	app, err := streamer.NewServer(cfg)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	url := *downloadURL
+	if url == "" && flag.NArg() > 0 {
+		url = flag.Arg(0)
+	}
+	if url != "" {
+		result, err := app.DirectDownload(streamer.DirectDownloadOptions{
+			URL:       url,
+			Format:    streamer.OutputFormat(*format),
+			OutputDir: *outputDir,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Fprintf(os.Stdout, "downloaded: %s\n", result.OutputPath)
+		return
 	}
 
 	log.Printf("bili-vrc-streamer listening on %s", cfg.Addr)

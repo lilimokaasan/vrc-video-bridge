@@ -38,6 +38,32 @@ curl -X POST http://localhost:8090/api/jobs \
 
 Poll the returned `status_url`. When the job is ready, paste `playback_url` into a VRChat video player.
 
+## Direct Download CLI
+
+Download one video as MP4 and exit:
+
+```bash
+go run ./cmd/server "https://www.bilibili.com/video/BVxxxx"
+```
+
+Equivalent explicit form:
+
+```bash
+go run ./cmd/server --download "https://www.bilibili.com/video/BVxxxx" --format mp4 --output downloads
+```
+
+Generate HLS files instead:
+
+```bash
+go run ./cmd/server --download "https://www.bilibili.com/video/BVxxxx" --format hls --output downloads
+```
+
+On Windows in this workspace, use the full Go path if `go` is not on PATH:
+
+```powershell
+& 'C:\Program Files\Go\bin\go.exe' run ./cmd/server "https://www.bilibili.com/video/BVxxxx"
+```
+
 ## Configuration
 
 Environment variables:
