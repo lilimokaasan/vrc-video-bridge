@@ -115,7 +115,7 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 	req.URL = strings.TrimSpace(req.URL)
 	if req.Format == "" {
-		req.Format = FormatHLS
+		req.Format = FormatMP4
 	}
 	if req.Format != FormatHLS && req.Format != FormatMP4 {
 		writeError(w, http.StatusBadRequest, "format must be hls or mp4")

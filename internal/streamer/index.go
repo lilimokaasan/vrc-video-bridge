@@ -512,12 +512,12 @@ const indexHTML = `<!doctype html>
           </div>
 
           <div class="options" aria-label="输出格式">
-            <div class="segmented" data-format="hls">
+            <div class="segmented" data-format="mp4">
               <span class="segmented-thumb" aria-hidden="true"></span>
-              <label><input type="radio" name="format" value="hls" checked />HLS</label>
-              <label><input type="radio" name="format" value="mp4" />MP4</label>
+              <label><input type="radio" name="format" value="hls" />HLS</label>
+              <label><input type="radio" name="format" value="mp4" checked />MP4</label>
             </div>
-            <span class="hint">默认选项更适合在线播放；MP4 更像一份单独的小文件。</span>
+            <span class="hint">MP4 通常更适合 VRChat 播放；HLS 可以作为另一种尝试。</span>
           </div>
         </form>
 
@@ -580,7 +580,7 @@ const indexHTML = `<!doctype html>
     }
 
     function syncFormatControl() {
-      const selected = new FormData(form).get('format') || 'hls';
+      const selected = new FormData(form).get('format') || 'mp4';
       segmented.dataset.format = selected;
     }
 
