@@ -567,6 +567,7 @@ const indexHTML = `<!doctype html>
       result.classList.remove('is-visible');
       setLink(direct, '', '等待解析出临时直链...');
       setLink(playback, '', '等待上传到 R2...');
+      result.classList.add('is-visible');
       submit.disabled = true;
       submit.textContent = '转换中...';
 
