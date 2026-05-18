@@ -149,21 +149,28 @@ func (s *Server) runJob(id string) {
 	}
 	s.updateJob(job.ID, func(j *Job) {
 		j.Status = StatusRunning
+		j.Message = "Preparing media"
 		j.Error = ""
 	})
 
 	if err := s.prepareMedia(job); err != nil {
 		s.updateJob(job.ID, func(j *Job) {
 			j.Status = StatusFailed
+			j.Message = ""
 			j.Error = err.Error()
 		})
 		return
 	}
 
+	s.updateJob(job.ID, func(j *Job) {
+		j.Message = "Media is ready, uploading to storage"
+	})
+
 	playbackURL, err := s.publishMedia(job)
 	if err != nil {
 		s.updateJob(job.ID, func(j *Job) {
 			j.Status = StatusFailed
+			j.Message = ""
 			j.Error = err.Error()
 		})
 		return
@@ -171,6 +178,7 @@ func (s *Server) runJob(id string) {
 
 	s.updateJob(job.ID, func(j *Job) {
 		j.Status = StatusReady
+		j.Message = ""
 		j.PlaybackURL = playbackURL
 	})
 }

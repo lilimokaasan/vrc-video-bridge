@@ -27,6 +27,7 @@ type Job struct {
 	SourceURL   string       `json:"source_url"`
 	Format      OutputFormat `json:"format"`
 	Status      JobStatus    `json:"status"`
+	Message     string       `json:"message,omitempty"`
 	PlaybackURL string       `json:"playback_url,omitempty"`
 	Error       string       `json:"error,omitempty"`
 	CreatedAt   time.Time    `json:"created_at"`

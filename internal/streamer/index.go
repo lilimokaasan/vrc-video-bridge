@@ -530,7 +530,7 @@ const indexHTML = `<!doctype html>
           throw new Error(job.error || '转换失败');
         }
 
-        setLog('正在转换中，请稍等...', job);
+        setLog(job.message || '正在转换中，请稍等...', job);
         await sleep(2500);
       }
     }

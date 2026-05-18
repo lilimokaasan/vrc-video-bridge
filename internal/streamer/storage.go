@@ -1,7 +1,9 @@
 package streamer
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -58,7 +60,11 @@ func (s *r2Storage) UploadFile(sourcePath, key string) error {
 		contentType = "application/octet-stream"
 	}
 
-	_, err = s.client.PutObject(&s3.PutObjectInput{
+	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.R2UploadTimeout)
+	defer cancel()
+
+	log.Printf("uploading %s to R2 key %s", sourcePath, key)
+	_, err = s.client.PutObjectWithContext(ctx, &s3.PutObjectInput{
 		Bucket:       aws.String(s.cfg.R2Bucket),
 		Key:          aws.String(key),
 		Body:         file,
@@ -68,6 +74,7 @@ func (s *r2Storage) UploadFile(sourcePath, key string) error {
 	if err != nil {
 		return fmt.Errorf("upload %s to R2 key %s: %w", sourcePath, key, err)
 	}
+	log.Printf("uploaded %s to R2 key %s", sourcePath, key)
 	return nil
 }
 
