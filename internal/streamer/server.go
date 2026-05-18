@@ -60,7 +60,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("POST /api/jobs", s.handleCreateJob)
 	s.mux.HandleFunc("GET /api/jobs/{id}", s.handleGetJob)
-	s.mux.Handle("/media/", http.StripPrefix("/media/", http.FileServer(http.Dir(s.cfg.mediaDir()))))
+	s.mux.Handle("GET /media/", http.StripPrefix("/media/", http.FileServer(http.Dir(s.cfg.mediaDir()))))
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
