@@ -24,7 +24,7 @@ const indexHTML = `<!doctype html>
 
     html {
       min-height: 100%;
-      scrollbar-color: var(--pink) #ffeeeb;
+      scrollbar-color: var(--pink) rgba(255,238,235,.72);
       scrollbar-width: thin;
       scroll-behavior: smooth;
     }
@@ -62,7 +62,7 @@ const indexHTML = `<!doctype html>
     }
 
     ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #ffeeeb; }
+    ::-webkit-scrollbar-track { background: rgba(255,238,235,.72); }
     ::-webkit-scrollbar-thumb { background: var(--pink); border-radius: 25px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--pink-deep); }
 
@@ -77,6 +77,7 @@ const indexHTML = `<!doctype html>
       transform-origin: left center;
       background: linear-gradient(90deg, var(--pink), #ffd2e3);
       box-shadow: 0 0 12px rgba(251, 152, 192, .7);
+      transition: transform 1s cubic-bezier(.22, .9, .28, 1), background 1s ease;
     }
 
     .shell {
@@ -635,6 +636,11 @@ const indexHTML = `<!doctype html>
     <footer>A soft diary for tiny heartbeats, favorite things, and VRChat moments.</footer>
   </div>
 
+  <script>
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.write('<script src="/assets/smooth-scroll.js"><\/script>');
+    }
+  </script>
   <script>
     const form = document.querySelector('#convertForm');
     const submit = document.querySelector('#submit');
