@@ -319,13 +319,25 @@ const indexHTML = `<!doctype html>
 
     .result a {
       min-width: 0;
-      overflow-wrap: anywhere;
       color: #d95f95;
       text-decoration: none;
       line-height: 1.5;
+      cursor: pointer;
+    }
+
+    .result a.is-collapsed {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .result a.is-expanded {
+      overflow-wrap: anywhere;
+      white-space: normal;
     }
 
     .copy-link {
+      width: 66px;
       min-height: 38px;
       padding: 0 13px;
       border-radius: 10px;
@@ -512,13 +524,31 @@ const indexHTML = `<!doctype html>
       progress.style.transform = 'scaleX(' + (max > 0 ? window.scrollY / max : 0) + ')';
     }
 
+    function compactURL(url) {
+      if (!url || url.length <= 72) return url;
+      return url.slice(0, 42) + '...' + url.slice(-24);
+    }
+
     function setLink(anchor, url, waitingText) {
+      const previousURL = anchor.dataset.fullUrl || '';
       if (url) {
         anchor.href = url;
-        anchor.textContent = url;
+        anchor.dataset.fullUrl = url;
+        if (previousURL !== url) {
+          anchor.dataset.expanded = 'false';
+        }
+        const expanded = anchor.dataset.expanded === 'true';
+        anchor.textContent = expanded ? url : compactURL(url);
+        anchor.title = expanded ? '点击收起链接' : '点击展开完整链接';
+        anchor.classList.toggle('is-expanded', expanded);
+        anchor.classList.toggle('is-collapsed', !expanded);
       } else {
         anchor.removeAttribute('href');
+        anchor.dataset.fullUrl = '';
+        anchor.dataset.expanded = 'false';
         anchor.textContent = waitingText;
+        anchor.title = '';
+        anchor.classList.remove('is-expanded', 'is-collapsed');
       }
     }
 
@@ -595,6 +625,16 @@ const indexHTML = `<!doctype html>
         await navigator.clipboard.writeText(href);
         button.textContent = '已复制';
         setTimeout(() => button.textContent = '复制', 1200);
+      });
+    });
+
+    [direct, playback].forEach(anchor => {
+      anchor.addEventListener('click', event => {
+        const fullURL = anchor.dataset.fullUrl || '';
+        if (!fullURL) return;
+        event.preventDefault();
+        anchor.dataset.expanded = anchor.dataset.expanded === 'true' ? 'false' : 'true';
+        setLink(anchor, fullURL, '');
       });
     });
 
