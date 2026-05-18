@@ -50,7 +50,7 @@ func (s *Server) DirectDownload(opts DirectDownloadOptions) (*DirectDownloadResu
 		UpdatedAt: now,
 	}
 
-	directURL, err := s.prepareMedia(job)
+	directURL, err := s.prepareMedia(job, nil)
 	if err != nil {
 		job.Status = StatusFailed
 		job.Error = err.Error()

@@ -153,7 +153,14 @@ func (s *Server) runJob(id string) {
 		j.Error = ""
 	})
 
-	directURL, err := s.prepareMedia(job)
+	directURL, err := s.prepareMedia(job, func(directURL string) {
+		s.updateJob(job.ID, func(j *Job) {
+			j.DirectURL = directURL
+			if directURL != "" {
+				j.Message = "Temporary MP4 link is ready, downloading media"
+			}
+		})
+	})
 	if err != nil {
 		s.updateJob(job.ID, func(j *Job) {
 			j.Status = StatusFailed
@@ -189,7 +196,9 @@ func (s *Server) runJob(id string) {
 	})
 }
 
-func (s *Server) prepareMedia(job *Job) (string, error) {
+type directURLCallback func(string)
+
+func (s *Server) prepareMedia(job *Job, onDirectURL directURLCallback) (string, error) {
 	workDir, err := filepath.Abs(filepath.Join(s.cfg.mediaDir(), job.ID))
 	if err != nil {
 		return "", err
@@ -198,7 +207,7 @@ func (s *Server) prepareMedia(job *Job) (string, error) {
 		return "", err
 	}
 
-	sourcePath, directURL, err := s.downloadVideo(job.SourceURL, workDir)
+	sourcePath, directURL, err := s.downloadVideo(job.SourceURL, workDir, onDirectURL)
 	if err != nil {
 		return "", err
 	}
@@ -223,9 +232,9 @@ func (s *Server) prepareMedia(job *Job) (string, error) {
 		indexPath)
 }
 
-func (s *Server) downloadVideo(sourceURL, workDir string) (string, string, error) {
+func (s *Server) downloadVideo(sourceURL, workDir string, onDirectURL directURLCallback) (string, string, error) {
 	if bvidPattern.MatchString(sourceURL) {
-		if sourcePath, directURL, err := s.downloadVideoWithBilibiliAPI(sourceURL, workDir); err == nil {
+		if sourcePath, directURL, err := s.downloadVideoWithBilibiliAPI(sourceURL, workDir, onDirectURL); err == nil {
 			return sourcePath, directURL, nil
 		}
 	}
@@ -249,7 +258,7 @@ func (s *Server) downloadVideo(sourceURL, workDir string) (string, string, error
 
 	err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.YTDLPPath, args...)
 	if err != nil {
-		if sourcePath, directURL, fallbackErr := s.downloadVideoWithBilibiliAPI(sourceURL, workDir); fallbackErr == nil {
+		if sourcePath, directURL, fallbackErr := s.downloadVideoWithBilibiliAPI(sourceURL, workDir, onDirectURL); fallbackErr == nil {
 			return sourcePath, directURL, nil
 		} else if s.cfg.YTDLPCookiesFile == "" && s.cfg.YTDLPCookiesFromBrowser == "" {
 			return "", "", fmt.Errorf("%w\nBilibili API fallback also failed: %v\nTry exporting browser cookies and setting YTDLP_COOKIES_FILE, or set YTDLP_COOKIES_FROM_BROWSER when yt-dlp can read your browser profile", err, fallbackErr)
@@ -305,7 +314,7 @@ type bilibiliDashStream struct {
 	Bandwidth int    `json:"bandwidth"`
 }
 
-func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string) (string, string, error) {
+func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string, onDirectURL directURLCallback) (string, string, error) {
 	bvid := bvidPattern.FindString(sourceURL)
 	if bvid == "" {
 		return "", "", errors.New("no BV id found in URL")
@@ -326,6 +335,9 @@ func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string) (string
 		if progressive.Code != 0 {
 			log.Printf("Bilibili progressive playurl API returned code %d: %s", progressive.Code, progressive.Message)
 		} else if direct := selectDirectStream(progressive.Data.DURL); direct.URL != "" {
+			if onDirectURL != nil {
+				onDirectURL(direct.URL)
+			}
 			target := filepath.Join(workDir, "source.mp4")
 			headers := fmt.Sprintf("Referer: %s\r\nUser-Agent: %s\r\n", sourceURL, s.cfg.YTDLPUserAgent)
 			if err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
@@ -338,6 +350,9 @@ func (s *Server) downloadVideoWithBilibiliAPI(sourceURL, workDir string) (string
 				return target, direct.URL, nil
 			} else {
 				_ = os.Remove(target)
+				if onDirectURL != nil {
+					onDirectURL("")
+				}
 				log.Printf("Bilibili progressive MP4 download failed, falling back to DASH: %v", err)
 			}
 		}
