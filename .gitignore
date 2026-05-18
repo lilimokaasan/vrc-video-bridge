@@ -1,4 +1,5 @@
 data/
 downloads/
+.env
 *.exe
 *.log
