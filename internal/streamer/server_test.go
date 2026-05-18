@@ -29,6 +29,24 @@ func TestRoutesServeHealth(t *testing.T) {
 	}
 }
 
+func TestR2EnabledRequiresCompleteConfig(t *testing.T) {
+	incomplete := Config{
+		R2Endpoint:        "https://example.r2.cloudflarestorage.com",
+		R2AccessKeyID:     "key",
+		R2SecretAccessKey: "secret",
+		R2Bucket:          "bucket",
+	}
+	if incomplete.r2Enabled() {
+		t.Fatal("expected incomplete R2 config to be disabled")
+	}
+
+	complete := incomplete
+	complete.R2PublicBaseURL = "https://video.example.com"
+	if !complete.r2Enabled() {
+		t.Fatal("expected complete R2 config to be enabled")
+	}
+}
+
 func TestValidateSourceURL(t *testing.T) {
 	s := &Server{cfg: Config{AllowedHosts: []string{"bilibili.com", "b23.tv"}}}
 

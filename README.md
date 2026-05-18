@@ -2,6 +2,8 @@
 
 Small Go service that accepts a Bilibili URL, downloads it with `yt-dlp`, remuxes it with `ffmpeg`, and exposes a VRChat-friendly `.m3u8` or `.mp4` URL.
 
+When Cloudflare R2 is configured, generated media is uploaded to R2 and the API returns the public R2 URL. Without R2, it serves generated files from the local `/media/` route.
+
 ## Requirements
 
 - Go 1.22+
@@ -38,6 +40,18 @@ curl -X POST http://localhost:8090/api/jobs \
 
 Poll the returned `status_url`. When the job is ready, paste `playback_url` into a VRChat video player.
 
+With R2 configured, `playback_url` will look like:
+
+```text
+https://video.example.com/vrchat/BVxxxx/mp4/video.mp4
+```
+
+Without R2, it will look like:
+
+```text
+http://localhost:8090/media/<job-id>/video.mp4
+```
+
 ## Direct Download CLI
 
 Download one video as MP4 and exit:
@@ -64,6 +78,8 @@ On Windows in this workspace, use the full Go path if `go` is not on PATH:
 & 'C:\Program Files\Go\bin\go.exe' run ./cmd/server "https://www.bilibili.com/video/BVxxxx"
 ```
 
+If R2 is configured, the CLI prints both the local downloaded file and the R2 `playback_url`.
+
 ## Configuration
 
 Environment variables:
@@ -84,6 +100,46 @@ Environment variables:
 | `MAX_CONCURRENT_JOBS` | `1` | Concurrent conversion jobs. |
 | `JOB_TIMEOUT_MINUTES` | `90` | Per command timeout. |
 | `ALLOWED_HOSTS` | `bilibili.com,www.bilibili.com,m.bilibili.com,b23.tv` | Comma-separated allowed source hosts. |
+| `R2_ENDPOINT` | empty | Cloudflare R2 S3 endpoint, usually `https://<account-id>.r2.cloudflarestorage.com`. |
+| `R2_ACCESS_KEY_ID` | empty | R2 API token access key ID. |
+| `R2_SECRET_ACCESS_KEY` | empty | R2 API token secret access key. |
+| `R2_BUCKET` | empty | R2 bucket name. |
+| `R2_PUBLIC_BASE_URL` | empty | Public base URL for the bucket or custom domain, such as `https://video.example.com`. |
+| `R2_KEY_PREFIX` | `vrchat` | Object key prefix used before `BVxxxx/mp4/video.mp4` or `BVxxxx/hls/index.m3u8`. |
+| `R2_CACHE_CONTROL` | `public, max-age=86400` | Cache-Control metadata applied to uploaded objects. |
+
+## Cloudflare R2 Mode
+
+Create an R2 bucket, bind a public/custom domain to it, then create an R2 API token with object read/write permission for that bucket.
+
+Example:
+
+```bash
+export R2_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
+export R2_ACCESS_KEY_ID="<access-key-id>"
+export R2_SECRET_ACCESS_KEY="<secret-access-key>"
+export R2_BUCKET="vrchat-video"
+export R2_PUBLIC_BASE_URL="https://video.example.com"
+export R2_KEY_PREFIX="vrchat"
+
+go run ./cmd/server
+```
+
+A submitted MP4 job will upload:
+
+```text
+vrchat/BVxxxx/mp4/video.mp4
+```
+
+A submitted HLS job will upload:
+
+```text
+vrchat/BVxxxx/hls/index.m3u8
+vrchat/BVxxxx/hls/segment_00000.ts
+...
+```
+
+The API returns the public URL to `video.mp4` or `index.m3u8`.
 
 ## Nginx Example
 

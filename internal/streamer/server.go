@@ -18,11 +18,12 @@ import (
 )
 
 type Server struct {
-	cfg  Config
-	mux  *http.ServeMux
-	sem  chan struct{}
-	mu   sync.RWMutex
-	jobs map[string]*Job
+	cfg     Config
+	mux     *http.ServeMux
+	sem     chan struct{}
+	storage objectStorage
+	mu      sync.RWMutex
+	jobs    map[string]*Job
 }
 
 func NewServer(cfg Config) (*Server, error) {
@@ -39,11 +40,20 @@ func NewServer(cfg Config) (*Server, error) {
 		log.Printf("warning: ffmpeg not found at %q: %v", cfg.FFmpegPath, err)
 	}
 
+	storage, err := newObjectStorage(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if storage != nil {
+		log.Printf("R2 upload enabled for bucket %q", cfg.R2Bucket)
+	}
+
 	s := &Server{
-		cfg:  cfg,
-		mux:  http.NewServeMux(),
-		sem:  make(chan struct{}, cfg.MaxConcurrentJobs),
-		jobs: map[string]*Job{},
+		cfg:     cfg,
+		mux:     http.NewServeMux(),
+		sem:     make(chan struct{}, cfg.MaxConcurrentJobs),
+		storage: storage,
+		jobs:    map[string]*Job{},
 	}
 	if err := s.loadJobs(); err != nil {
 		return nil, err
@@ -149,13 +159,18 @@ func (s *Server) runJob(id string) {
 		return
 	}
 
+	playbackURL, err := s.publishMedia(job)
+	if err != nil {
+		s.updateJob(job.ID, func(j *Job) {
+			j.Status = StatusFailed
+			j.Error = err.Error()
+		})
+		return
+	}
+
 	s.updateJob(job.ID, func(j *Job) {
 		j.Status = StatusReady
-		if j.Format == FormatHLS {
-			j.PlaybackURL = s.publicURL("/media/" + j.ID + "/index.m3u8")
-		} else {
-			j.PlaybackURL = s.publicURL("/media/" + j.ID + "/video.mp4")
-		}
+		j.PlaybackURL = playbackURL
 	})
 }
 

@@ -36,6 +36,9 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Fprintf(os.Stdout, "downloaded: %s\n", result.OutputPath)
+		if result.PlaybackURL != "" {
+			fmt.Fprintf(os.Stdout, "playback_url: %s\n", result.PlaybackURL)
+		}
 		return
 	}
 

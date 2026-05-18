@@ -16,8 +16,9 @@ type DirectDownloadOptions struct {
 }
 
 type DirectDownloadResult struct {
-	Job        Job
-	OutputPath string
+	Job         Job
+	OutputPath  string
+	PlaybackURL string
 }
 
 func (s *Server) DirectDownload(opts DirectDownloadOptions) (*DirectDownloadResult, error) {
@@ -57,6 +58,11 @@ func (s *Server) DirectDownload(opts DirectDownloadOptions) (*DirectDownloadResu
 
 	job.Status = StatusReady
 	job.UpdatedAt = time.Now().UTC()
+	playbackURL, err := s.publishMedia(job)
+	if err != nil {
+		return nil, err
+	}
+	job.PlaybackURL = playbackURL
 
 	workDir := filepath.Join(s.cfg.mediaDir(), job.ID)
 	baseName := safeOutputBaseName(opts.URL, job.ID)
@@ -66,7 +72,7 @@ func (s *Server) DirectDownload(opts DirectDownloadOptions) (*DirectDownloadResu
 		if err := copyFile(sourcePath, outputPath); err != nil {
 			return nil, err
 		}
-		return &DirectDownloadResult{Job: *job, OutputPath: outputPath}, nil
+		return &DirectDownloadResult{Job: *job, OutputPath: outputPath, PlaybackURL: playbackURL}, nil
 	}
 
 	sourceDir := workDir
@@ -74,7 +80,7 @@ func (s *Server) DirectDownload(opts DirectDownloadOptions) (*DirectDownloadResu
 	if err := copyDir(sourceDir, outputPath); err != nil {
 		return nil, err
 	}
-	return &DirectDownloadResult{Job: *job, OutputPath: filepath.Join(outputPath, "index.m3u8")}, nil
+	return &DirectDownloadResult{Job: *job, OutputPath: filepath.Join(outputPath, "index.m3u8"), PlaybackURL: playbackURL}, nil
 }
 
 func safeOutputBaseName(rawURL, fallback string) string {

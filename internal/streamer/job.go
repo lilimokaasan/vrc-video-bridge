@@ -9,6 +9,10 @@ const (
 	FormatMP4 OutputFormat = "mp4"
 )
 
+func (f OutputFormat) String() string {
+	return string(f)
+}
+
 type JobStatus string
 
 const (

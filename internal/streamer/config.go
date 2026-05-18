@@ -23,6 +23,13 @@ type Config struct {
 	MaxConcurrentJobs       int
 	JobTimeout              time.Duration
 	AllowedHosts            []string
+	R2Endpoint              string
+	R2AccessKeyID           string
+	R2SecretAccessKey       string
+	R2Bucket                string
+	R2PublicBaseURL         string
+	R2KeyPrefix             string
+	R2CacheControl          string
 }
 
 func LoadConfig() Config {
@@ -42,7 +49,22 @@ func LoadConfig() Config {
 		JobTimeout:              time.Duration(envInt("JOB_TIMEOUT_MINUTES", 90)) * time.Minute,
 		AllowedHosts: strings.Split(envString("ALLOWED_HOSTS",
 			"bilibili.com,www.bilibili.com,m.bilibili.com,b23.tv"), ","),
+		R2Endpoint:        strings.TrimRight(envString("R2_ENDPOINT", ""), "/"),
+		R2AccessKeyID:     envString("R2_ACCESS_KEY_ID", ""),
+		R2SecretAccessKey: envString("R2_SECRET_ACCESS_KEY", ""),
+		R2Bucket:          envString("R2_BUCKET", ""),
+		R2PublicBaseURL:   strings.TrimRight(envString("R2_PUBLIC_BASE_URL", ""), "/"),
+		R2KeyPrefix:       strings.Trim(envString("R2_KEY_PREFIX", "vrchat"), "/"),
+		R2CacheControl:    envString("R2_CACHE_CONTROL", "public, max-age=86400"),
 	}
+}
+
+func (c Config) r2Enabled() bool {
+	return c.R2Endpoint != "" &&
+		c.R2AccessKeyID != "" &&
+		c.R2SecretAccessKey != "" &&
+		c.R2Bucket != "" &&
+		c.R2PublicBaseURL != ""
 }
 
 func (c Config) mediaDir() string {
