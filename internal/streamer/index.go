@@ -63,6 +63,26 @@ const indexHTML = `<!doctype html>
       z-index: -1;
     }
 
+    @keyframes header-in {
+      0% { opacity: 0; transform: translateY(-34px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes main-in {
+      0% { opacity: 0; transform: translateY(42px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes side-in {
+      0% { opacity: 0; transform: translateX(28px); }
+      100% { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes foot-in {
+      0% { opacity: 0; transform: translateY(16px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: rgba(255,238,235,.72); }
     ::-webkit-scrollbar-thumb { background: var(--pink); border-radius: 25px; }
@@ -98,6 +118,7 @@ const indexHTML = `<!doctype html>
       justify-content: space-between;
       gap: 18px;
       color: rgba(77, 70, 80, .78);
+      animation: header-in .9s cubic-bezier(.22, .9, .28, 1) both;
     }
 
     .brand {
@@ -175,6 +196,7 @@ const indexHTML = `<!doctype html>
       background:
         linear-gradient(150deg, rgba(255,255,255,.88), rgba(255,247,251,.74) 52%, rgba(255,255,255,.78)),
         var(--paper);
+      animation: main-in .72s cubic-bezier(.22, .9, .28, 1) .08s both;
     }
 
     .eyebrow {
@@ -474,6 +496,11 @@ const indexHTML = `<!doctype html>
       border-radius: 14px;
       padding: 18px;
       background: linear-gradient(180deg, rgba(255,255,255,.76), rgba(255,248,251,.62));
+      animation: side-in .68s cubic-bezier(.22, .9, .28, 1) .16s both;
+    }
+
+    .note:nth-child(2) {
+      animation-delay: .28s;
     }
 
     .note h2 {
@@ -535,6 +562,7 @@ const indexHTML = `<!doctype html>
       color: rgba(126,111,123,.76);
       font-size: 12px;
       text-align: center;
+      animation: foot-in .7s cubic-bezier(.22, .9, .28, 1) .36s both;
     }
 
     @media (max-width: 880px) {
