@@ -73,6 +73,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("POST /api/jobs", s.handleCreateJob)
 	s.mux.HandleFunc("GET /api/jobs/{id}", s.handleGetJob)
+	s.mux.HandleFunc("GET /favicon.png", s.handleFaviconPNG)
+	s.mux.HandleFunc("GET /favicon.ico", s.handleFaviconICO)
 	s.mux.Handle("GET /media/", http.StripPrefix("/media/", http.FileServer(http.Dir(s.cfg.mediaDir()))))
 	s.mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(s.cfg.AssetsDir))))
 }
@@ -84,6 +86,14 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, indexHTML)
+}
+
+func (s *Server) handleFaviconPNG(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, filepath.Join(s.cfg.AssetsDir, "favicon.png"))
+}
+
+func (s *Server) handleFaviconICO(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, filepath.Join(s.cfg.AssetsDir, "favicon.ico"))
 }
 
 func (s *Server) handleDirectRedirect(w http.ResponseWriter, r *http.Request, value string) {

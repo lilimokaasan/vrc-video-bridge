@@ -5,6 +5,8 @@ const indexHTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/favicon.png?v=20260518-transparent" type="image/png">
+  <link rel="shortcut icon" href="/favicon.ico?v=20260518-transparent">
   <title>KoiMoe Link Room</title>
   <style>
     :root {
