@@ -292,6 +292,9 @@ func (s *Server) downloadVideo(job *Job, workDir string, onDirectURL directURLCa
 		"-f", s.cfg.FormatSelector,
 		"-o", "source.%(ext)s",
 	}
+	if s.cfg.BilibiliCookie != "" {
+		args = append(args, "--add-header", "Cookie:"+s.cfg.BilibiliCookie)
+	}
 	if s.cfg.YTDLPCookiesFile != "" {
 		args = append(args, "--cookies", s.cfg.YTDLPCookiesFile)
 	} else if s.cfg.YTDLPCookiesFromBrowser != "" {
@@ -457,7 +460,7 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 	}
 
 	target := filepath.Join(workDir, "source.mp4")
-	headers := fmt.Sprintf("Referer: %s\r\nUser-Agent: %s\r\n", sourceURL, s.cfg.YTDLPUserAgent)
+	headers := s.bilibiliHeaders(sourceURL)
 	s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在下载并整理 MP4...")
 	if err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
 		"-y",
@@ -483,6 +486,9 @@ func (s *Server) downloadDirectMP4(jobID, rawURL, referer, target string, expect
 	}
 	req.Header.Set("User-Agent", s.cfg.YTDLPUserAgent)
 	req.Header.Set("Referer", referer)
+	if s.cfg.BilibiliCookie != "" {
+		req.Header.Set("Cookie", s.cfg.BilibiliCookie)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -535,6 +541,9 @@ func (s *Server) fetchBilibiliJSON(client *http.Client, rawURL, referer string, 
 	}
 	req.Header.Set("User-Agent", s.cfg.YTDLPUserAgent)
 	req.Header.Set("Referer", referer)
+	if s.cfg.BilibiliCookie != "" {
+		req.Header.Set("Cookie", s.cfg.BilibiliCookie)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -545,6 +554,14 @@ func (s *Server) fetchBilibiliJSON(client *http.Client, rawURL, referer string, 
 		return fmt.Errorf("Bilibili API returned HTTP %d", resp.StatusCode)
 	}
 	return json.NewDecoder(resp.Body).Decode(target)
+}
+
+func (s *Server) bilibiliHeaders(referer string) string {
+	headers := fmt.Sprintf("Referer: %s\r\nUser-Agent: %s\r\n", referer, s.cfg.YTDLPUserAgent)
+	if s.cfg.BilibiliCookie != "" {
+		headers += "Cookie: " + s.cfg.BilibiliCookie + "\r\n"
+	}
+	return headers
 }
 
 func selectDirectStream(streams []bilibiliDirectStream) bilibiliDirectStream {

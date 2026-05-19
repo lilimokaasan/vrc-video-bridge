@@ -20,6 +20,7 @@ type Config struct {
 	YTDLPReferer            string
 	YTDLPUserAgent          string
 	YTDLPExtraArgs          []string
+	BilibiliCookie          string
 	FormatSelector          string
 	FFmpegPath              string
 	MaxConcurrentJobs       int
@@ -49,6 +50,7 @@ func LoadConfig() Config {
 		YTDLPReferer:            envString("YTDLP_REFERER", "https://www.bilibili.com/"),
 		YTDLPUserAgent:          envString("YTDLP_USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
 		YTDLPExtraArgs:          envFields("YTDLP_EXTRA_ARGS"),
+		BilibiliCookie:          envString("BILIBILI_COOKIE", ""),
 		FormatSelector:          envString("FORMAT_SELECTOR", "bv*[vcodec^=avc1]+ba/b[vcodec^=avc1]/bv*+ba/b"),
 		FFmpegPath:              envString("FFMPEG_PATH", "ffmpeg"),
 		MaxConcurrentJobs:       envInt("MAX_CONCURRENT_JOBS", 1),

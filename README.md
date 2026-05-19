@@ -107,6 +107,7 @@ Environment variables:
 | `YTDLP_REFERER` | `https://www.bilibili.com/` | Referer passed to yt-dlp. |
 | `YTDLP_USER_AGENT` | desktop Chrome UA | User-Agent passed to yt-dlp. |
 | `YTDLP_EXTRA_ARGS` | empty | Optional space-separated extra arguments appended before the source URL. |
+| `BILIBILI_COOKIE` | empty | Optional raw Bilibili `Cookie` header value. Used by the Bilibili API resolver, direct MP4 downloader, ffmpeg fallback, and yt-dlp header fallback. Keep it private. |
 | `FORMAT_SELECTOR` | `bv*[vcodec^=avc1]+ba/b[vcodec^=avc1]/bv*+ba/b` | yt-dlp format selector. Defaults to H.264-first output for better VRChat compatibility. |
 | `FFMPEG_PATH` | `ffmpeg` | Path to ffmpeg. |
 | `MAX_CONCURRENT_JOBS` | `1` | Concurrent conversion jobs. |
@@ -181,6 +182,6 @@ PUBLIC_BASE_URL=https://vrc-video.example.com ./bili-vrc-streamer
 
 ## Notes
 
-- Bilibili can return HTTP 412 or require cookies even for public videos. Export a Netscape-format cookies file and set `YTDLP_COOKIES_FILE=/path/to/cookies.txt`. You can also try `YTDLP_COOKIES_FROM_BROWSER=chrome`, `edge`, or `firefox`, but this can fail while the browser profile is locked.
+- Bilibili can return HTTP 412 or require cookies even for public videos. For the server-side resolver, set `BILIBILI_COOKIE="SESSDATA=...; bili_jct=...; DedeUserID=..."` in `.env`. For yt-dlp-only workflows, you can also export a Netscape-format cookies file and set `YTDLP_COOKIES_FILE=/path/to/cookies.txt`, or try `YTDLP_COOKIES_FROM_BROWSER=chrome`, `edge`, or `firefox`; browser-profile reads can fail while the browser profile is locked.
 - Generated HLS/MP4 files consume disk space. Put `DATA_DIR` on a volume with enough storage and add a cleanup timer when this becomes long-running infrastructure.
 - Only process videos you have the right to play or share.
