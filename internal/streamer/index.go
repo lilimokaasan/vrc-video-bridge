@@ -390,13 +390,16 @@ const indexHTML = `<!doctype html>
     }
 
     .copy-link {
-      width: 66px;
+      width: 76px;
+      flex: 0 0 76px;
       min-height: 38px;
       padding: 0 13px;
       border-radius: 10px;
       color: #b76083;
       background: linear-gradient(180deg, #fff4f6, #ffeeeb);
       box-shadow: inset 0 1px 0 rgba(255,255,255,.82);
+      text-align: center;
+      white-space: nowrap;
     }
 
     .copy-link:hover { transform: translateY(-1px); box-shadow: 0 8px 16px rgba(251,152,192,.16); }
