@@ -257,20 +257,28 @@ func (s *Server) prepareMedia(job *Job, onDirectURL directURLCallback) (string, 
 			return directURL, nil
 		}
 		s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在整理视频文件...")
-		return directURL, runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
-			"-y", "-i", sourcePath, "-c", "copy", "-movflags", "+faststart", target)
+		if err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
+			"-y", "-i", sourcePath, "-c", "copy", "-movflags", "+faststart", target); err != nil {
+			return "", err
+		}
+		s.setJobProgress(job.ID, "download", "下载 MP4", "done", 100, 100, "MP4 已下载完成")
+		return directURL, nil
 	}
 
 	indexPath := filepath.Join(workDir, "index.m3u8")
 	s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在整理 HLS 片段...")
-	return directURL, runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
+	if err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
 		"-y", "-i", sourcePath,
 		"-c", "copy",
 		"-start_number", "0",
 		"-hls_time", "6",
 		"-hls_playlist_type", "vod",
 		"-hls_segment_filename", filepath.Join(workDir, "segment_%05d.ts"),
-		indexPath)
+		indexPath); err != nil {
+		return "", err
+	}
+	s.setJobProgress(job.ID, "download", "下载 MP4", "done", 100, 100, "HLS 片段已整理完成")
+	return directURL, nil
 }
 
 func (s *Server) downloadVideo(job *Job, workDir string, onDirectURL directURLCallback) (string, string, error) {
@@ -420,23 +428,22 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 		return "", "", fmt.Errorf("view API returned code %d: %s", view.Code, view.Message)
 	}
 
+	var fallbackDirectURL string
 	progressiveURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=64&platform=html5&high_quality=1", url.QueryEscape(bvid), view.Data.CID)
 	var progressive bilibiliPlayURLResponse
 	if err := s.fetchBilibiliJSON(client, progressiveURL, sourceURL, &progressive); err == nil {
 		if progressive.Code != 0 {
 			log.Printf("Bilibili progressive playurl API returned code %d: %s", progressive.Code, progressive.Message)
 		} else if direct := selectDirectStream(progressive.Data.DURL); direct.URL != "" {
+			fallbackDirectURL = direct.URL
 			if onDirectURL != nil {
 				onDirectURL(direct.URL)
 			}
 			target := filepath.Join(workDir, "source.mp4")
-			if err := s.downloadDirectMP4(job.ID, direct.URL, sourceURL, target, direct.Size); err == nil {
+			if err := s.downloadDirectMP4WithRetry(job.ID, direct.URL, sourceURL, target, direct.Size); err == nil {
 				return target, direct.URL, nil
 			} else {
 				_ = os.Remove(target)
-				if onDirectURL != nil {
-					onDirectURL("")
-				}
 				log.Printf("Bilibili progressive MP4 download failed, falling back to DASH: %v", err)
 			}
 		}
@@ -473,7 +480,24 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 		target); err != nil {
 		return "", "", err
 	}
-	return target, "", nil
+	return target, fallbackDirectURL, nil
+}
+
+func (s *Server) downloadDirectMP4WithRetry(jobID, rawURL, referer, target string, expectedSize int64) error {
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if attempt > 1 {
+			s.setJobProgress(jobID, "download", "下载 MP4", "active", 0, expectedSize, fmt.Sprintf("连接中断，正在重试第 %d 次...", attempt))
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+		_ = os.Remove(target)
+		if err := s.downloadDirectMP4(jobID, rawURL, referer, target, expectedSize); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+	}
+	return lastErr
 }
 
 func (s *Server) downloadDirectMP4(jobID, rawURL, referer, target string, expectedSize int64) error {
