@@ -3,6 +3,7 @@ package streamer
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -26,6 +27,31 @@ func TestRoutesServeHealth(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected health route to return 200, got %d", rec.Code)
+	}
+}
+
+func TestCreateJobRequiresR2Storage(t *testing.T) {
+	server, err := NewServer(Config{
+		PublicBaseURL:     "http://example.test",
+		DataDir:           t.TempDir(),
+		YTDLPPath:         "yt-dlp",
+		FFmpegPath:        "ffmpeg",
+		MaxConcurrentJobs: 1,
+		JobTimeout:        1,
+		AllowedHosts:      []string{"bilibili.com"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"url":"https://www.bilibili.com/video/BV1xx411c7mD","format":"mp4"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/jobs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected create job without R2 to return 503, got %d", rec.Code)
 	}
 }
 

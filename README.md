@@ -2,7 +2,7 @@
 
 Small Go service that accepts a Bilibili URL, downloads it with `yt-dlp`, remuxes it with `ffmpeg`, and exposes a VRChat-friendly `.m3u8` or `.mp4` URL.
 
-When Cloudflare R2 is configured, generated media is uploaded to R2 and the API returns the public R2 URL. Without R2, it serves generated files from the local `/media/` route.
+When Cloudflare R2 is configured, generated media is uploaded to R2 and the API returns the public R2 URL. The HTTP conversion API requires R2 so server-local video files only exist temporarily during conversion/upload.
 
 ## Requirements
 
@@ -46,11 +46,7 @@ With R2 configured, `playback_url` will look like:
 https://video.example.com/vrchat/BVxxxx/mp4/video.mp4
 ```
 
-Without R2, it will look like:
-
-```text
-http://localhost:8090/media/<job-id>/video.mp4
-```
+If R2 is not configured, the HTTP conversion API returns `503 Service Unavailable` instead of downloading media to local disk.
 
 ## Direct MP4 Redirect
 
@@ -183,5 +179,5 @@ PUBLIC_BASE_URL=https://vrc-video.example.com ./bili-vrc-streamer
 ## Notes
 
 - Bilibili can return HTTP 412 or require cookies even for public videos. For the server-side resolver, set `BILIBILI_COOKIE="SESSDATA=...; bili_jct=...; DedeUserID=..."` in `.env`. For yt-dlp-only workflows, you can also export a Netscape-format cookies file and set `YTDLP_COOKIES_FILE=/path/to/cookies.txt`, or try `YTDLP_COOKIES_FROM_BROWSER=chrome`, `edge`, or `firefox`; browser-profile reads can fail while the browser profile is locked.
-- Generated HLS/MP4 files consume disk space. Put `DATA_DIR` on a volume with enough storage and add a cleanup timer when this becomes long-running infrastructure.
+- HTTP conversion jobs require R2 and automatically remove local generated media after the upload attempt finishes.
 - Only process videos you have the right to play or share.

@@ -120,6 +120,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
+	if s.storage == nil {
+		writeError(w, http.StatusServiceUnavailable, "R2 storage is not configured")
+		return
+	}
+
 	var req CreateJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -198,6 +203,7 @@ func (s *Server) runJob(id string) {
 		})
 	})
 	if err != nil {
+		s.cleanupJobMedia(job.ID)
 		s.updateJob(job.ID, func(j *Job) {
 			j.Status = StatusFailed
 			j.Message = ""
@@ -205,6 +211,7 @@ func (s *Server) runJob(id string) {
 		})
 		return
 	}
+	defer s.cleanupJobMedia(job.ID)
 
 	s.updateJob(job.ID, func(j *Job) {
 		j.DirectURL = directURL
@@ -233,6 +240,18 @@ func (s *Server) runJob(id string) {
 		setProgressStep(j, "download", ProgressStep{Label: "下载 MP4", State: "done", Percent: 100, Message: "MP4 已下载完成"})
 		setProgressStep(j, "upload", ProgressStep{Label: "上传到 R2", State: "done", Percent: 100, Message: "分享链接已准备好"})
 	})
+}
+
+func (s *Server) cleanupJobMedia(id string) {
+	if id == "" {
+		return
+	}
+	workDir := filepath.Join(s.cfg.mediaDir(), id)
+	if err := os.RemoveAll(workDir); err != nil {
+		log.Printf("failed to cleanup media for job %s: %v", id, err)
+		return
+	}
+	log.Printf("cleaned up media for job %s", id)
 }
 
 type directURLCallback func(string)
