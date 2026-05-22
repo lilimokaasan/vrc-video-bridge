@@ -74,12 +74,15 @@ func TestR2EnabledRequiresCompleteConfig(t *testing.T) {
 }
 
 func TestValidateSourceURL(t *testing.T) {
-	s := &Server{cfg: Config{AllowedHosts: []string{"bilibili.com", "b23.tv"}}}
+	s := &Server{cfg: Config{AllowedHosts: []string{"bilibili.com", "b23.tv", "youtube.com", "youtu.be"}}}
 
 	valid := []string{
 		"https://www.bilibili.com/video/BV1xx411c7mD",
 		"https://m.bilibili.com/video/BV1xx411c7mD",
 		"https://b23.tv/abc123",
+		"https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+		"https://youtu.be/dQw4w9WgXcQ",
+		"https://m.youtube.com/shorts/dQw4w9WgXcQ",
 	}
 	for _, raw := range valid {
 		if err := s.validateSourceURL(raw); err != nil {
@@ -135,6 +138,16 @@ func TestNormalizeBilibiliValue(t *testing.T) {
 			in:   "分享一个视频 BV1Fj411p7cP 给你",
 			want: "https://www.bilibili.com/video/BV1Fj411p7cP",
 		},
+		{
+			name: "youtube watch url",
+			in:   "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+			want: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+		},
+		{
+			name: "youtube mobile share text",
+			in:   "I found this on YouTube: https://youtu.be/dQw4w9WgXcQ?si=abc",
+			want: "https://youtu.be/dQw4w9WgXcQ?si=abc",
+		},
 	}
 
 	for _, tt := range tests {
@@ -151,5 +164,19 @@ func TestNormalizeBilibiliValue(t *testing.T) {
 
 	if _, err := normalizeBilibiliValue("not-a-video"); err == nil {
 		t.Fatal("expected invalid value to fail")
+	}
+}
+
+func TestYouTubeVideoID(t *testing.T) {
+	tests := map[string]string{
+		"https://www.youtube.com/watch?v=dQw4w9WgXcQ":      "dQw4w9WgXcQ",
+		"https://youtu.be/dQw4w9WgXcQ?si=abc":              "dQw4w9WgXcQ",
+		"https://m.youtube.com/shorts/dQw4w9WgXcQ?feature": "dQw4w9WgXcQ",
+		"https://www.youtube.com/embed/dQw4w9WgXcQ":        "dQw4w9WgXcQ",
+	}
+	for rawURL, want := range tests {
+		if got := youtubeVideoID(rawURL); got != want {
+			t.Fatalf("expected %q for %s, got %q", want, rawURL, got)
+		}
 	}
 }

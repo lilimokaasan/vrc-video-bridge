@@ -598,11 +598,11 @@ const indexHTML = `<!doctype html>
       <section class="converter panel" aria-labelledby="title">
         <p class="eyebrow">For VRChat watch moments</p>
         <h1 id="title">把喜欢的视频，轻轻递到 VRChat 里。</h1>
-        <p class="lead">贴入一条 Bilibili 地址，稍等片刻，就会整理出适合在 VRChat 里和朋友一起看的链接。</p>
+        <p class="lead">贴入一条 Bilibili 或 YouTube 地址，稍等片刻，就会整理出适合在 VRChat 里和朋友一起看的链接。</p>
 
         <form id="convertForm">
           <div class="input-wrap">
-            <input id="url" name="url" autocomplete="off" required placeholder="https://www.bilibili.com/video/BV..." />
+            <input id="url" name="url" autocomplete="off" required placeholder="Bilibili / YouTube 视频链接" />
             <button class="submit" id="submit" type="submit">轻轻整理</button>
           </div>
 

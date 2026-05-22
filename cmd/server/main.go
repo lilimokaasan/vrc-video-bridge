@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	downloadURL := flag.String("download", "", "download one Bilibili URL and exit")
+	downloadURL := flag.String("download", "", "download one video URL and exit")
 	format := flag.String("format", "mp4", "output format for direct download: mp4 or hls")
 	outputDir := flag.String("output", "downloads", "output directory for direct downloads")
 	checkR2 := flag.Bool("check-r2", false, "upload a tiny healthcheck object to configured R2 storage and exit")

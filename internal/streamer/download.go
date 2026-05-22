@@ -94,6 +94,9 @@ func safeOutputBaseName(rawURL, fallback string) string {
 	if bvid := bvidPattern.FindString(rawURL); bvid != "" {
 		return bvid
 	}
+	if youtubeID := youtubeVideoID(rawURL); youtubeID != "" {
+		return "youtube-" + youtubeID
+	}
 	value := strings.NewReplacer(
 		":", "-",
 		"/", "-",

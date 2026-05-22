@@ -1,6 +1,6 @@
-# Bilibili to VRChat Streamer
+# Video to VRChat Streamer
 
-Small Go service that accepts a Bilibili URL, downloads it with `yt-dlp`, remuxes it with `ffmpeg`, and exposes a VRChat-friendly `.m3u8` or `.mp4` URL.
+Small Go service that accepts a Bilibili or YouTube URL, downloads it with `yt-dlp`, remuxes it with `ffmpeg`, and exposes a VRChat-friendly `.m3u8` or `.mp4` URL.
 
 When Cloudflare R2 is configured, generated media is uploaded to R2 and the API returns the public R2 URL. The HTTP conversion API requires R2 so server-local video files only exist temporarily during conversion/upload.
 
@@ -35,10 +35,10 @@ Create a job with curl:
 ```bash
 curl -X POST http://localhost:8090/api/jobs \
   -H 'Content-Type: application/json' \
-  -d '{"url":"https://www.bilibili.com/video/BVxxxx","format":"hls"}'
+  -d '{"url":"https://www.youtube.com/watch?v=xxxxxxxxxxx","format":"mp4"}'
 ```
 
-The `url` field may also contain a mobile share text such as `【title-哔哩哔哩】 https://b23.tv/xxxx`; the service extracts the Bilibili link before converting.
+The `url` field may also contain mobile share text; the service extracts a supported Bilibili or YouTube link before converting.
 
 Poll the returned `status_url`. When the job is ready, paste `playback_url` into a VRChat video player.
 
@@ -46,6 +46,7 @@ With R2 configured, `playback_url` will look like:
 
 ```text
 https://video.example.com/vrchat/BVxxxx/mp4/video.mp4
+https://video.example.com/vrchat/youtube-xxxxxxxxxxx/mp4/video.mp4
 ```
 
 If R2 is not configured, the HTTP conversion API returns `503 Service Unavailable` instead of downloading media to local disk.
@@ -66,7 +67,7 @@ The service resolves the Bilibili HTML5 MP4 URL and returns `302 Found` to that 
 Download one video as MP4 and exit:
 
 ```bash
-go run ./cmd/server "https://www.bilibili.com/video/BVxxxx"
+go run ./cmd/server "https://www.youtube.com/watch?v=xxxxxxxxxxx"
 ```
 
 Equivalent explicit form:
@@ -106,17 +107,17 @@ Environment variables:
 | `YTDLP_USER_AGENT` | desktop Chrome UA | User-Agent passed to yt-dlp. |
 | `YTDLP_EXTRA_ARGS` | empty | Optional space-separated extra arguments appended before the source URL. |
 | `BILIBILI_COOKIE` | empty | Optional raw Bilibili `Cookie` header value. Used by the Bilibili API resolver, direct MP4 downloader, ffmpeg fallback, and yt-dlp header fallback. Keep it private. |
-| `FORMAT_SELECTOR` | `bv*[vcodec^=avc1]+ba/b[vcodec^=avc1]/bv*+ba/b` | yt-dlp format selector. Defaults to H.264-first output for better VRChat compatibility. |
+| `FORMAT_SELECTOR` | `bv*[vcodec^=avc1]+ba[ext=m4a]/b[vcodec^=avc1]/bv*[vcodec^=avc1]+ba/bv*+ba/b` | yt-dlp format selector. Defaults to H.264 and m4a-first output for better VRChat/MP4 compatibility. |
 | `FFMPEG_PATH` | `ffmpeg` | Path to ffmpeg. |
 | `MAX_CONCURRENT_JOBS` | `1` | Concurrent conversion jobs. |
 | `JOB_TIMEOUT_MINUTES` | `90` | Per command timeout. |
-| `ALLOWED_HOSTS` | `bilibili.com,www.bilibili.com,m.bilibili.com,b23.tv` | Comma-separated allowed source hosts. |
+| `ALLOWED_HOSTS` | `bilibili.com,www.bilibili.com,m.bilibili.com,b23.tv,youtube.com,www.youtube.com,m.youtube.com,music.youtube.com,youtu.be` | Comma-separated allowed source hosts. |
 | `R2_ENDPOINT` | empty | Cloudflare R2 S3 endpoint, usually `https://<account-id>.r2.cloudflarestorage.com`. |
 | `R2_ACCESS_KEY_ID` | empty | R2 API token access key ID. |
 | `R2_SECRET_ACCESS_KEY` | empty | R2 API token secret access key. |
 | `R2_BUCKET` | empty | R2 bucket name. |
 | `R2_PUBLIC_BASE_URL` | empty | Public base URL for the bucket or custom domain, such as `https://video.example.com`. |
-| `R2_KEY_PREFIX` | `vrchat` | Object key prefix used before `BVxxxx/mp4/video.mp4` or `BVxxxx/hls/index.m3u8`. |
+| `R2_KEY_PREFIX` | `vrchat` | Object key prefix used before `BVxxxx/mp4/video.mp4`, `youtube-xxxxxxxxxxx/mp4/video.mp4`, or HLS equivalents. |
 | `R2_CACHE_CONTROL` | `public, max-age=86400` | Cache-Control metadata applied to uploaded objects. |
 | `R2_UPLOAD_TIMEOUT_SECONDS` | `600` | Timeout for each R2 upload request. |
 
@@ -141,6 +142,7 @@ A submitted MP4 job will upload:
 
 ```text
 vrchat/BVxxxx/mp4/video.mp4
+vrchat/youtube-xxxxxxxxxxx/mp4/video.mp4
 ```
 
 A submitted HLS job will upload:
@@ -181,5 +183,6 @@ PUBLIC_BASE_URL=https://vrc-video.example.com ./bili-vrc-streamer
 ## Notes
 
 - Bilibili can return HTTP 412 or require cookies even for public videos. For the server-side resolver, set `BILIBILI_COOKIE="SESSDATA=...; bili_jct=...; DedeUserID=..."` in `.env`. For yt-dlp-only workflows, you can also export a Netscape-format cookies file and set `YTDLP_COOKIES_FILE=/path/to/cookies.txt`, or try `YTDLP_COOKIES_FROM_BROWSER=chrome`, `edge`, or `firefox`; browser-profile reads can fail while the browser profile is locked.
+- YouTube support uses `yt-dlp`, so region restrictions, age checks, sign-in checks, or rate limits may still require cookies or a different network environment.
 - HTTP conversion jobs require R2 and automatically remove local generated media after the upload attempt finishes.
 - Only process videos you have the right to play or share.

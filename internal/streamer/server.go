@@ -102,6 +102,10 @@ func (s *Server) handleDirectRedirect(w http.ResponseWriter, r *http.Request, va
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !isBilibiliURL(sourceURL) {
+		writeError(w, http.StatusBadRequest, "direct MP4 redirect is only available for Bilibili links")
+		return
+	}
 	if err := s.validateSourceURL(sourceURL); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -319,12 +323,12 @@ func (s *Server) downloadVideo(job *Job, workDir string, onDirectURL directURLCa
 		"--no-playlist",
 		"--restrict-filenames",
 		"--merge-output-format", "mp4",
-		"--add-header", "Referer:" + s.cfg.YTDLPReferer,
+		"--add-header", "Referer:" + s.refererForSource(sourceURL),
 		"--user-agent", s.cfg.YTDLPUserAgent,
 		"-f", s.cfg.FormatSelector,
 		"-o", "source.%(ext)s",
 	}
-	if s.cfg.BilibiliCookie != "" {
+	if s.cfg.BilibiliCookie != "" && isBilibiliURL(sourceURL) {
 		args = append(args, "--add-header", "Cookie:"+s.cfg.BilibiliCookie)
 	}
 	if s.cfg.YTDLPCookiesFile != "" {
@@ -338,11 +342,13 @@ func (s *Server) downloadVideo(job *Job, workDir string, onDirectURL directURLCa
 	s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在下载 MP4...")
 	err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.YTDLPPath, args...)
 	if err != nil {
-		if sourcePath, directURL, fallbackErr := s.downloadVideoWithBilibiliAPI(job, workDir, onDirectURL); fallbackErr == nil {
-			s.setJobProgress(job.ID, "download", "下载 MP4", "done", 100, 100, "MP4 已下载完成")
-			return sourcePath, directURL, nil
-		} else if s.cfg.YTDLPCookiesFile == "" && s.cfg.YTDLPCookiesFromBrowser == "" {
-			return "", "", fmt.Errorf("%w\nBilibili API fallback also failed: %v\nTry exporting browser cookies and setting YTDLP_COOKIES_FILE, or set YTDLP_COOKIES_FROM_BROWSER when yt-dlp can read your browser profile", err, fallbackErr)
+		if bvidPattern.MatchString(sourceURL) {
+			if sourcePath, directURL, fallbackErr := s.downloadVideoWithBilibiliAPI(job, workDir, onDirectURL); fallbackErr == nil {
+				s.setJobProgress(job.ID, "download", "下载 MP4", "done", 100, 100, "MP4 已下载完成")
+				return sourcePath, directURL, nil
+			} else if s.cfg.YTDLPCookiesFile == "" && s.cfg.YTDLPCookiesFromBrowser == "" {
+				return "", "", fmt.Errorf("%w\nBilibili API fallback also failed: %v\nTry exporting browser cookies and setting YTDLP_COOKIES_FILE, or set YTDLP_COOKIES_FROM_BROWSER when yt-dlp can read your browser profile", err, fallbackErr)
+			}
 		}
 		return "", "", err
 	}
@@ -362,13 +368,13 @@ func (s *Server) downloadVideo(job *Job, workDir string, onDirectURL directURLCa
 }
 
 var (
-	bvidPattern        = regexp.MustCompile(`(?i)BV[0-9A-Za-z]+`)
-	bilibiliURLPattern = regexp.MustCompile(`https?://[^\s<>"'，。；、！？，）】》]+`)
+	bvidPattern     = regexp.MustCompile(`(?i)BV[0-9A-Za-z]+`)
+	videoURLPattern = regexp.MustCompile(`https?://[^\s<>"']+`)
 )
 
-func normalizeBilibiliValue(value string) (string, error) {
+func normalizeVideoValue(value string) (string, error) {
 	value = strings.TrimSpace(value)
-	if rawURL := firstBilibiliURL(value); rawURL != "" {
+	if rawURL := firstVideoURL(value); rawURL != "" {
 		return rawURL, nil
 	}
 	if bvid := bvidPattern.FindString(value); bvid != "" {
@@ -377,11 +383,15 @@ func normalizeBilibiliValue(value string) (string, error) {
 		}
 		return "https://www.bilibili.com/video/" + bvid, nil
 	}
-	return "", errors.New("input must include a Bilibili BV id, video URL, or b23.tv share link")
+	return "", errors.New("input must include a Bilibili or YouTube video link")
+}
+
+func normalizeBilibiliValue(value string) (string, error) {
+	return normalizeVideoValue(value)
 }
 
 func (s *Server) normalizeSourceURL(value string) (string, error) {
-	sourceURL, err := normalizeBilibiliValue(value)
+	sourceURL, err := normalizeVideoValue(value)
 	if err != nil {
 		return "", err
 	}
@@ -396,20 +406,82 @@ func (s *Server) normalizeSourceURL(value string) (string, error) {
 	return expanded, nil
 }
 
-func firstBilibiliURL(value string) string {
-	for _, candidate := range bilibiliURLPattern.FindAllString(value, -1) {
-		candidate = strings.TrimRight(candidate, ".,;，。；、!！?？)]}）】》\"'")
+func firstVideoURL(value string) string {
+	for _, candidate := range videoURLPattern.FindAllString(value, -1) {
+		candidate = strings.TrimRightFunc(candidate, func(r rune) bool {
+			return r > 127 || strings.ContainsRune(".,;!?)]}\"'", r)
+		})
 		parsed, err := url.Parse(candidate)
 		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 			continue
 		}
 		host := strings.ToLower(parsed.Hostname())
-		if host == "b23.tv" || strings.HasSuffix(host, ".b23.tv") ||
-			host == "bilibili.com" || strings.HasSuffix(host, ".bilibili.com") {
+		if isSupportedVideoHost(host) {
 			return candidate
 		}
 	}
 	return ""
+}
+
+func isSupportedVideoHost(host string) bool {
+	return host == "b23.tv" || strings.HasSuffix(host, ".b23.tv") ||
+		host == "bilibili.com" || strings.HasSuffix(host, ".bilibili.com") ||
+		host == "youtube.com" || strings.HasSuffix(host, ".youtube.com") ||
+		host == "youtu.be" || strings.HasSuffix(host, ".youtu.be")
+}
+
+func isBilibiliURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "bilibili.com" || strings.HasSuffix(host, ".bilibili.com") || isB23URL(rawURL)
+}
+
+func isYouTubeURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "youtube.com" || strings.HasSuffix(host, ".youtube.com") ||
+		host == "youtu.be" || strings.HasSuffix(host, ".youtu.be")
+}
+
+func youtubeVideoID(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "youtu.be" || strings.HasSuffix(host, ".youtu.be") {
+		return safeID(strings.Trim(parsed.Path, "/"))
+	}
+	if id := parsed.Query().Get("v"); id != "" {
+		return safeID(id)
+	}
+	if strings.HasPrefix(parsed.Path, "/shorts/") || strings.HasPrefix(parsed.Path, "/embed/") {
+		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		if len(parts) >= 2 {
+			return safeID(parts[1])
+		}
+	}
+	return ""
+}
+
+func safeID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func isB23URL(rawURL string) bool {
@@ -467,6 +539,13 @@ func (s *Server) expandB23URL(rawURL string) (string, error) {
 		current = expanded
 	}
 	return "", errors.New("too many redirects")
+}
+
+func (s *Server) refererForSource(sourceURL string) string {
+	if isYouTubeURL(sourceURL) {
+		return "https://www.youtube.com/"
+	}
+	return s.cfg.YTDLPReferer
 }
 
 type bilibiliViewResponse struct {

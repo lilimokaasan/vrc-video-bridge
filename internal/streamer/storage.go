@@ -219,6 +219,8 @@ func (s *Server) mediaObjectPrefix(job *Job) string {
 	}
 	if bvid := bvidPattern.FindString(job.SourceURL); bvid != "" {
 		parts = append(parts, bvid)
+	} else if youtubeID := youtubeVideoID(job.SourceURL); youtubeID != "" {
+		parts = append(parts, "youtube-"+youtubeID)
 	} else {
 		parts = append(parts, job.ID)
 	}
