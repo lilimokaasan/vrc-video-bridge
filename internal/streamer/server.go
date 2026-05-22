@@ -97,7 +97,7 @@ func (s *Server) handleFaviconICO(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDirectRedirect(w http.ResponseWriter, r *http.Request, value string) {
-	sourceURL, err := normalizeBilibiliValue(value)
+	sourceURL, err := s.normalizeSourceURL(value)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -130,7 +130,12 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	req.URL = strings.TrimSpace(req.URL)
+	sourceURL, err := s.normalizeSourceURL(req.URL)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.URL = sourceURL
 	if req.Format == "" {
 		req.Format = FormatMP4
 	}
@@ -356,16 +361,112 @@ func (s *Server) downloadVideo(job *Job, workDir string, onDirectURL directURLCa
 	return "", "", errors.New("yt-dlp completed but no media file was produced")
 }
 
-var bvidPattern = regexp.MustCompile(`(?i)BV[0-9A-Za-z]+`)
+var (
+	bvidPattern        = regexp.MustCompile(`(?i)BV[0-9A-Za-z]+`)
+	bilibiliURLPattern = regexp.MustCompile(`https?://[^\s<>"'，。；、！？，）】》]+`)
+)
 
 func normalizeBilibiliValue(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if rawURL := firstBilibiliURL(value); rawURL != "" {
+		return rawURL, nil
+	}
 	if bvid := bvidPattern.FindString(value); bvid != "" {
 		if parsed, err := url.Parse(value); err == nil && parsed.Scheme != "" && parsed.Host != "" {
 			return value, nil
 		}
 		return "https://www.bilibili.com/video/" + bvid, nil
 	}
-	return "", errors.New("v must be a Bilibili BV id or video URL")
+	return "", errors.New("input must include a Bilibili BV id, video URL, or b23.tv share link")
+}
+
+func (s *Server) normalizeSourceURL(value string) (string, error) {
+	sourceURL, err := normalizeBilibiliValue(value)
+	if err != nil {
+		return "", err
+	}
+	if !isB23URL(sourceURL) {
+		return sourceURL, nil
+	}
+	expanded, err := s.expandB23URL(sourceURL)
+	if err != nil {
+		log.Printf("failed to expand b23 short link %q: %v", sourceURL, err)
+		return sourceURL, nil
+	}
+	return expanded, nil
+}
+
+func firstBilibiliURL(value string) string {
+	for _, candidate := range bilibiliURLPattern.FindAllString(value, -1) {
+		candidate = strings.TrimRight(candidate, ".,;，。；、!！?？)]}）】》\"'")
+		parsed, err := url.Parse(candidate)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			continue
+		}
+		host := strings.ToLower(parsed.Hostname())
+		if host == "b23.tv" || strings.HasSuffix(host, ".b23.tv") ||
+			host == "bilibili.com" || strings.HasSuffix(host, ".bilibili.com") {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func isB23URL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "b23.tv" || strings.HasSuffix(host, ".b23.tv")
+}
+
+func (s *Server) expandB23URL(rawURL string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	current := rawURL
+	for redirects := 0; redirects < 10; redirects++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, current, nil)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("User-Agent", s.cfg.YTDLPUserAgent)
+		req.Header.Set("Referer", s.cfg.YTDLPReferer)
+		if s.cfg.BilibiliCookie != "" {
+			req.Header.Set("Cookie", s.cfg.BilibiliCookie)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", err
+		}
+		resp.Body.Close()
+
+		location := resp.Header.Get("Location")
+		if resp.StatusCode < 300 || resp.StatusCode > 399 || location == "" {
+			return "", errors.New("short link did not redirect")
+		}
+		next, err := resp.Request.URL.Parse(location)
+		if err != nil {
+			return "", err
+		}
+		expanded := next.String()
+		host := strings.ToLower(next.Hostname())
+		if host == "bilibili.com" || strings.HasSuffix(host, ".bilibili.com") {
+			return expanded, nil
+		}
+		if !isB23URL(expanded) {
+			return "", fmt.Errorf("short link redirected to unexpected host %q", next.Hostname())
+		}
+		current = expanded
+	}
+	return "", errors.New("too many redirects")
 }
 
 type bilibiliViewResponse struct {

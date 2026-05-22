@@ -115,6 +115,26 @@ func TestNormalizeBilibiliValue(t *testing.T) {
 			in:   "https://www.bilibili.com/video/BV1Fj411p7cP/?spm_id_from=333.788",
 			want: "https://www.bilibili.com/video/BV1Fj411p7cP/?spm_id_from=333.788",
 		},
+		{
+			name: "mobile share short link",
+			in:   "【兔兔兔-哔哩哔哩】 https://b23.tv/GIxeXkP",
+			want: "https://b23.tv/GIxeXkP",
+		},
+		{
+			name: "mobile share short link with chinese suffix",
+			in:   "【兔兔兔-哔哩哔哩】 https://b23.tv/GIxeXkP，复制打开",
+			want: "https://b23.tv/GIxeXkP",
+		},
+		{
+			name: "mobile share video url",
+			in:   "【兔兔兔-哔哩哔哩】 https://www.bilibili.com/video/BV1Fj411p7cP/ 复制打开",
+			want: "https://www.bilibili.com/video/BV1Fj411p7cP/",
+		},
+		{
+			name: "mobile share bvid text",
+			in:   "分享一个视频 BV1Fj411p7cP 给你",
+			want: "https://www.bilibili.com/video/BV1Fj411p7cP",
+		},
 	}
 
 	for _, tt := range tests {

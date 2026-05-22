@@ -38,6 +38,8 @@ curl -X POST http://localhost:8090/api/jobs \
   -d '{"url":"https://www.bilibili.com/video/BVxxxx","format":"hls"}'
 ```
 
+The `url` field may also contain a mobile share text such as `【title-哔哩哔哩】 https://b23.tv/xxxx`; the service extracts the Bilibili link before converting.
+
 Poll the returned `status_url`. When the job is ready, paste `playback_url` into a VRChat video player.
 
 With R2 configured, `playback_url` will look like:

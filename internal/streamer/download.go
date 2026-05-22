@@ -23,7 +23,11 @@ type DirectDownloadResult struct {
 }
 
 func (s *Server) DirectDownload(opts DirectDownloadOptions) (*DirectDownloadResult, error) {
-	opts.URL = strings.TrimSpace(opts.URL)
+	sourceURL, err := s.normalizeSourceURL(opts.URL)
+	if err != nil {
+		return nil, err
+	}
+	opts.URL = sourceURL
 	if opts.Format == "" {
 		opts.Format = FormatMP4
 	}
