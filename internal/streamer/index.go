@@ -290,26 +290,46 @@ const indexHTML = `<!doctype html>
     .submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 18px 34px rgba(251,152,192,.42); }
 
     .clear-input {
+      position: relative;
       width: 34px;
       height: 34px;
       min-height: 34px;
       align-self: center;
       border-radius: 50%;
-      color: #b76083;
       background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,244,246,.84));
       border: 1px solid rgba(251,152,192,.2);
       box-shadow: inset 0 1px 0 rgba(255,255,255,.92);
-      font-size: 17px;
-      line-height: 1;
       display: inline-grid;
       place-items: center;
       padding: 0;
+      color: transparent;
     }
 
     .clear-input:hover:not(:disabled) {
       transform: translateY(-1px);
       background: linear-gradient(180deg, rgba(255,248,250,.96), rgba(255,235,242,.88));
       box-shadow: 0 8px 14px rgba(251,152,192,.15), inset 0 1px 0 rgba(255,255,255,.92);
+    }
+
+    .clear-input::before,
+    .clear-input::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 12px;
+      height: 1.8px;
+      border-radius: 999px;
+      background: #b76083;
+      transform-origin: center;
+    }
+
+    .clear-input::before {
+      transform: translate(-50%, -50%) rotate(45deg);
+    }
+
+    .clear-input::after {
+      transform: translate(-50%, -50%) rotate(-45deg);
     }
 
     .options {
