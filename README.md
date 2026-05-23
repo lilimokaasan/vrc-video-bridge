@@ -107,6 +107,8 @@ Environment variables:
 | `YTDLP_USER_AGENT` | desktop Chrome UA | User-Agent passed to yt-dlp. |
 | `YTDLP_EXTRA_ARGS` | empty | Optional space-separated extra arguments appended before the source URL. |
 | `BILIBILI_COOKIE` | empty | Optional raw Bilibili `Cookie` header value. Used by the Bilibili API resolver, direct MP4 downloader, ffmpeg fallback, and yt-dlp header fallback. Keep it private. |
+| `BILIBILI_QUALITY` | `80` | Preferred Bilibili API quality. `80` is 1080P, `64` is 720P. |
+| `BILIBILI_QUALITY_FALLBACKS` | `80,64,32,16` | Bilibili API fallback quality list. The service tries each value until a usable stream is found. |
 | `FORMAT_SELECTOR` | `bv*[vcodec^=avc1]+ba[ext=m4a]/b[vcodec^=avc1]/bv*[vcodec^=avc1]+ba/bv*+ba/b` | yt-dlp format selector. Defaults to H.264 and m4a-first output for better VRChat/MP4 compatibility. |
 | `FFMPEG_PATH` | `ffmpeg` | Path to ffmpeg. |
 | `MAX_CONCURRENT_JOBS` | `1` | Concurrent conversion jobs. |
@@ -183,6 +185,7 @@ PUBLIC_BASE_URL=https://vrc-video.example.com ./bili-vrc-streamer
 ## Notes
 
 - Bilibili can return HTTP 412 or require cookies even for public videos. For the server-side resolver, set `BILIBILI_COOKIE="SESSDATA=...; bili_jct=...; DedeUserID=..."` in `.env`. For yt-dlp-only workflows, you can also export a Netscape-format cookies file and set `YTDLP_COOKIES_FILE=/path/to/cookies.txt`, or try `YTDLP_COOKIES_FROM_BROWSER=chrome`, `edge`, or `firefox`; browser-profile reads can fail while the browser profile is locked.
+- Bilibili 1080P usually requires a valid login cookie. The default API quality preference is 1080P, then 720P and lower fallbacks when higher quality is unavailable.
 - YouTube support uses `yt-dlp`, so region restrictions, age checks, sign-in checks, or rate limits may still require cookies or a different network environment.
 - HTTP conversion jobs require R2 and automatically remove local generated media after the upload attempt finishes.
 - Only process videos you have the right to play or share.

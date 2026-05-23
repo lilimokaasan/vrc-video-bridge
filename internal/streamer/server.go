@@ -548,6 +548,26 @@ func (s *Server) refererForSource(sourceURL string) string {
 	return s.cfg.YTDLPReferer
 }
 
+func (s *Server) bilibiliQualityCandidates() []int {
+	var candidates []int
+	seen := map[int]bool{}
+	add := func(qn int) {
+		if qn <= 0 || seen[qn] {
+			return
+		}
+		seen[qn] = true
+		candidates = append(candidates, qn)
+	}
+	add(s.cfg.BilibiliQuality)
+	for _, qn := range s.cfg.BilibiliQualityFallbacks {
+		add(qn)
+	}
+	for _, qn := range []int{80, 64, 32, 16} {
+		add(qn)
+	}
+	return candidates
+}
+
 type bilibiliViewResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -596,19 +616,27 @@ func (s *Server) resolveBilibiliDirectURL(sourceURL string) (string, error) {
 		return "", fmt.Errorf("view API returned code %d: %s", view.Code, view.Message)
 	}
 
-	playURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=64&platform=html5&high_quality=1", url.QueryEscape(bvid), view.Data.CID)
-	var play bilibiliPlayURLResponse
-	if err := s.fetchBilibiliJSON(client, playURL, sourceURL, &play); err != nil {
-		return "", err
+	var lastErr error
+	for _, qn := range s.bilibiliQualityCandidates() {
+		playURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=%d&platform=html5&high_quality=1", url.QueryEscape(bvid), view.Data.CID, qn)
+		var play bilibiliPlayURLResponse
+		if err := s.fetchBilibiliJSON(client, playURL, sourceURL, &play); err != nil {
+			lastErr = err
+			continue
+		}
+		if play.Code != 0 {
+			lastErr = fmt.Errorf("playurl API returned code %d: %s", play.Code, play.Message)
+			continue
+		}
+		direct := selectDirectStream(play.Data.DURL)
+		if direct.URL != "" {
+			return direct.URL, nil
+		}
 	}
-	if play.Code != 0 {
-		return "", fmt.Errorf("playurl API returned code %d: %s", play.Code, play.Message)
+	if lastErr != nil {
+		return "", lastErr
 	}
-	direct := selectDirectStream(play.Data.DURL)
-	if direct.URL == "" {
-		return "", errors.New("playurl API did not return a progressive MP4 URL")
-	}
-	return direct.URL, nil
+	return "", errors.New("playurl API did not return a progressive MP4 URL")
 }
 
 func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirectURL directURLCallback) (string, string, error) {
@@ -628,40 +656,62 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 	}
 
 	var fallbackDirectURL string
-	progressiveURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=64&platform=html5&high_quality=1", url.QueryEscape(bvid), view.Data.CID)
-	var progressive bilibiliPlayURLResponse
-	if err := s.fetchBilibiliJSON(client, progressiveURL, sourceURL, &progressive); err == nil {
+	qualityCandidates := s.bilibiliQualityCandidates()
+	for _, qn := range qualityCandidates {
+		progressiveURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=%d&platform=html5&high_quality=1", url.QueryEscape(bvid), view.Data.CID, qn)
+		var progressive bilibiliPlayURLResponse
+		if err := s.fetchBilibiliJSON(client, progressiveURL, sourceURL, &progressive); err != nil {
+			log.Printf("Bilibili progressive playurl API failed for qn=%d, trying fallback: %v", qn, err)
+			continue
+		}
 		if progressive.Code != 0 {
-			log.Printf("Bilibili progressive playurl API returned code %d: %s", progressive.Code, progressive.Message)
-		} else if direct := selectDirectStream(progressive.Data.DURL); direct.URL != "" {
+			log.Printf("Bilibili progressive playurl API returned code %d for qn=%d: %s", progressive.Code, qn, progressive.Message)
+			continue
+		}
+		direct := selectDirectStream(progressive.Data.DURL)
+		if direct.URL == "" {
+			continue
+		}
+		if fallbackDirectURL == "" {
 			fallbackDirectURL = direct.URL
 			if onDirectURL != nil {
 				onDirectURL(direct.URL)
 			}
-			target := filepath.Join(workDir, "source.mp4")
-			if err := s.downloadDirectMP4WithRetry(job.ID, direct.URL, sourceURL, target, direct.Size); err == nil {
-				return target, direct.URL, nil
-			} else {
-				_ = os.Remove(target)
-				log.Printf("Bilibili progressive MP4 download failed, falling back to DASH: %v", err)
-			}
 		}
-	} else {
-		log.Printf("Bilibili progressive playurl API failed, falling back to DASH: %v", err)
+		target := filepath.Join(workDir, "source.mp4")
+		if err := s.downloadDirectMP4WithRetry(job.ID, direct.URL, sourceURL, target, direct.Size); err == nil {
+			return target, direct.URL, nil
+		} else {
+			_ = os.Remove(target)
+			log.Printf("Bilibili progressive MP4 download failed for qn=%d, trying fallback: %v", qn, err)
+		}
 	}
 
-	playURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=64&fnval=16&fourk=1", url.QueryEscape(bvid), view.Data.CID)
-	var play bilibiliPlayURLResponse
-	if err := s.fetchBilibiliJSON(client, playURL, sourceURL, &play); err != nil {
-		return "", "", err
-	}
-	if play.Code != 0 {
-		return "", "", fmt.Errorf("playurl API returned code %d: %s", play.Code, play.Message)
+	var video bilibiliDashStream
+	var audio bilibiliDashStream
+	var lastDashErr error
+	for _, qn := range qualityCandidates {
+		playURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=%d&fnval=16&fourk=1", url.QueryEscape(bvid), view.Data.CID, qn)
+		var play bilibiliPlayURLResponse
+		if err := s.fetchBilibiliJSON(client, playURL, sourceURL, &play); err != nil {
+			lastDashErr = err
+			continue
+		}
+		if play.Code != 0 {
+			lastDashErr = fmt.Errorf("playurl API returned code %d: %s", play.Code, play.Message)
+			continue
+		}
+		video = selectDashStream(play.Data.Dash.Video, "avc1")
+		audio = selectDashStream(play.Data.Dash.Audio, "mp4a")
+		if video.BaseURL != "" && audio.BaseURL != "" {
+			break
+		}
 	}
 
-	video := selectDashStream(play.Data.Dash.Video, "avc1")
-	audio := selectDashStream(play.Data.Dash.Audio, "mp4a")
 	if video.BaseURL == "" || audio.BaseURL == "" {
+		if lastDashErr != nil {
+			return "", "", lastDashErr
+		}
 		return "", "", errors.New("playurl API did not return usable H.264/AAC streams")
 	}
 

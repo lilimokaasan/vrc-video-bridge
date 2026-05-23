@@ -180,3 +180,20 @@ func TestYouTubeVideoID(t *testing.T) {
 		}
 	}
 }
+
+func TestBilibiliQualityCandidates(t *testing.T) {
+	s := &Server{cfg: Config{
+		BilibiliQuality:          80,
+		BilibiliQualityFallbacks: []int{80, 64, 32},
+	}}
+	got := s.bilibiliQualityCandidates()
+	want := []int{80, 64, 32, 16}
+	if len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
+	}
+}
