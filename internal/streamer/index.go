@@ -236,7 +236,7 @@ const indexHTML = `<!doctype html>
 
     .input-wrap {
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: minmax(0, 1fr) auto auto;
       gap: 10px;
       align-items: center;
       padding: 10px;
@@ -288,6 +288,23 @@ const indexHTML = `<!doctype html>
     }
 
     .submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 18px 34px rgba(251,152,192,.42); }
+
+    .clear-input {
+      width: 46px;
+      min-height: 46px;
+      border-radius: 12px;
+      color: #b76083;
+      background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,244,246,.84));
+      border: 1px solid rgba(251,152,192,.2);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.92);
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .clear-input:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 18px rgba(251,152,192,.16), inset 0 1px 0 rgba(255,255,255,.92);
+    }
 
     .options {
       display: flex;
@@ -569,8 +586,8 @@ const indexHTML = `<!doctype html>
       .shell { width: min(100% - 22px, 680px); padding-top: 16px; }
       header { align-items: flex-start; }
       main { grid-template-columns: 1fr; align-items: stretch; }
-      .input-wrap { grid-template-columns: 1fr; }
-      .submit { width: 100%; }
+      .input-wrap { grid-template-columns: minmax(0, 1fr) auto; }
+      .submit { grid-column: 1 / -1; width: 100%; }
       .status-pill { display: none; }
     }
 
@@ -603,6 +620,7 @@ const indexHTML = `<!doctype html>
         <form id="convertForm">
           <div class="input-wrap">
             <input id="url" name="url" autocomplete="off" required placeholder="Bilibili / YouTube 视频链接" />
+            <button class="clear-input" id="clearInput" type="button" title="清空当前链接" aria-label="清空当前链接">×</button>
             <button class="submit" id="submit" type="submit">轻轻整理</button>
           </div>
 
@@ -676,6 +694,8 @@ const indexHTML = `<!doctype html>
   </script>
   <script>
     const form = document.querySelector('#convertForm');
+    const urlInput = document.querySelector('#url');
+    const clearInput = document.querySelector('#clearInput');
     const submit = document.querySelector('#submit');
     const log = document.querySelector('#log');
     const result = document.querySelector('#result');
@@ -688,6 +708,7 @@ const indexHTML = `<!doctype html>
     const progress = document.querySelector('.scrollbar-progress');
 
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    let activePollToken = 0;
 
     function setLog(message) {
       log.textContent = message;
@@ -785,6 +806,21 @@ const indexHTML = `<!doctype html>
       });
     }
 
+    function resetLinks() {
+      result.classList.remove('is-visible');
+      setLink(direct, '', '正在寻找视频入口...');
+      setLink(playback, '', '正在整理分享链接...');
+    }
+
+    function resetPageState() {
+      activePollToken++;
+      resetLinks();
+      resetJobProgress();
+      setLog('等一条想分享的视频链接...');
+      submit.disabled = false;
+      submit.textContent = '轻轻整理';
+    }
+
     async function createJob(url, format) {
       const res = await fetch('/api/jobs', {
         method: 'POST',
@@ -796,10 +832,12 @@ const indexHTML = `<!doctype html>
       return data;
     }
 
-    async function poll(statusURL) {
+    async function poll(statusURL, token) {
       for (;;) {
+        if (token !== activePollToken) return;
         const res = await fetch(statusURL);
         const job = await res.json();
+        if (token !== activePollToken) return;
         if (!res.ok) throw new Error(job.error || '还没有听见回声');
         renderLinks(job);
         renderProgress(job);
@@ -820,7 +858,7 @@ const indexHTML = `<!doctype html>
 
     form.addEventListener('submit', async event => {
       event.preventDefault();
-      result.classList.remove('is-visible');
+      const pollToken = ++activePollToken;
       resetJobProgress();
       setLink(direct, '', '正在寻找视频入口...');
       setLink(playback, '', '正在整理分享链接...');
@@ -828,20 +866,31 @@ const indexHTML = `<!doctype html>
       submit.disabled = true;
       submit.textContent = '整理中...';
 
-      const url = document.querySelector('#url').value.trim();
+      const url = urlInput.value.trim();
       const format = new FormData(form).get('format');
 
       try {
         setLog('正在把这条链接放进小托盘...');
         const job = await createJob(url, format);
+        if (pollToken !== activePollToken) return;
         setLog('已经收到啦，正在轻轻整理...', job);
-        await poll(job.status_url.replace(location.origin, ''));
+        await poll(job.status_url.replace(location.origin, ''), pollToken);
       } catch (error) {
-        setLog(error.message);
+        if (pollToken === activePollToken) {
+          setLog(error.message);
+        }
       } finally {
-        submit.disabled = false;
-        submit.textContent = '轻轻整理';
+        if (pollToken === activePollToken) {
+          submit.disabled = false;
+          submit.textContent = '轻轻整理';
+        }
       }
+    });
+
+    clearInput.addEventListener('click', () => {
+      urlInput.value = '';
+      resetPageState();
+      urlInput.focus();
     });
 
     form.querySelectorAll('input[name="format"]').forEach(input => {
