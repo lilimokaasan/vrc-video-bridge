@@ -81,7 +81,7 @@ func (s *Server) registerRoutes() {
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if value := strings.TrimSpace(r.URL.Query().Get("v")); value != "" {
-		s.handleDirectRedirect(w, r, value)
+		s.handleDirectPlayback(w, r, value)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -96,14 +96,14 @@ func (s *Server) handleFaviconICO(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filepath.Join(s.cfg.AssetsDir, "favicon.ico"))
 }
 
-func (s *Server) handleDirectRedirect(w http.ResponseWriter, r *http.Request, value string) {
+func (s *Server) handleDirectPlayback(w http.ResponseWriter, r *http.Request, value string) {
 	sourceURL, err := s.normalizeSourceURL(value)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if !isBilibiliURL(sourceURL) {
-		writeError(w, http.StatusBadRequest, "direct MP4 redirect is only available for Bilibili links")
+		writeError(w, http.StatusBadRequest, "direct MP4 playback is only available for Bilibili links")
 		return
 	}
 	if err := s.validateSourceURL(sourceURL); err != nil {
@@ -116,7 +116,65 @@ func (s *Server) handleDirectRedirect(w http.ResponseWriter, r *http.Request, va
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	http.Redirect(w, r, directURL, http.StatusFound)
+	if normalizeDirectPlaybackMode(s.cfg.DirectPlaybackMode) == directPlaybackModeRedirect {
+		http.Redirect(w, r, directURL, http.StatusFound)
+		return
+	}
+	s.proxyDirectMP4(w, r, sourceURL, directURL)
+}
+
+var directMP4ProxyHeaders = []string{
+	"Accept-Ranges",
+	"Cache-Control",
+	"Content-Length",
+	"Content-Range",
+	"Content-Type",
+	"ETag",
+	"Last-Modified",
+}
+
+func (s *Server) proxyDirectMP4(w http.ResponseWriter, r *http.Request, referer, directURL string) {
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, directURL, nil)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	req.Header.Set("User-Agent", s.cfg.YTDLPUserAgent)
+	req.Header.Set("Referer", referer)
+	if s.cfg.BilibiliCookie != "" {
+		req.Header.Set("Cookie", s.cfg.BilibiliCookie)
+	}
+	if rangeHeader := r.Header.Get("Range"); rangeHeader != "" {
+		req.Header.Set("Range", rangeHeader)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("direct MP4 proxy returned HTTP %d", resp.StatusCode))
+		return
+	}
+
+	for _, name := range directMP4ProxyHeaders {
+		for _, value := range resp.Header.Values(name) {
+			w.Header().Add(name, value)
+		}
+	}
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "video/mp4")
+	}
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(resp.StatusCode)
+	if r.Method == http.MethodHead {
+		return
+	}
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		log.Printf("direct MP4 proxy copy failed: %v", err)
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

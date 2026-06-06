@@ -14,6 +14,7 @@ type Config struct {
 	PublicBaseURL            string
 	DataDir                  string
 	AssetsDir                string
+	DirectPlaybackMode       string
 	YTDLPPath                string
 	YTDLPCookiesFile         string
 	YTDLPCookiesFromBrowser  string
@@ -46,6 +47,7 @@ func LoadConfig() Config {
 		PublicBaseURL:            strings.TrimRight(envString("PUBLIC_BASE_URL", "http://localhost:8090"), "/"),
 		DataDir:                  envString("DATA_DIR", "data"),
 		AssetsDir:                envString("ASSETS_DIR", "web/assets"),
+		DirectPlaybackMode:       normalizeDirectPlaybackMode(envString("DIRECT_PLAYBACK_MODE", "proxy")),
 		YTDLPPath:                envString("YTDLP_PATH", "yt-dlp"),
 		YTDLPCookiesFile:         envString("YTDLP_COOKIES_FILE", ""),
 		YTDLPCookiesFromBrowser:  envString("YTDLP_COOKIES_FROM_BROWSER", ""),
@@ -69,6 +71,20 @@ func LoadConfig() Config {
 		R2KeyPrefix:       strings.Trim(envString("R2_KEY_PREFIX", "vrchat"), "/"),
 		R2CacheControl:    envString("R2_CACHE_CONTROL", "public, max-age=86400"),
 		R2UploadTimeout:   time.Duration(envInt("R2_UPLOAD_TIMEOUT_SECONDS", 600)) * time.Second,
+	}
+}
+
+const (
+	directPlaybackModeProxy    = "proxy"
+	directPlaybackModeRedirect = "redirect"
+)
+
+func normalizeDirectPlaybackMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case directPlaybackModeRedirect:
+		return directPlaybackModeRedirect
+	default:
+		return directPlaybackModeProxy
 	}
 }
 

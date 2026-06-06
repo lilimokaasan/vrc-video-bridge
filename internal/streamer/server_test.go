@@ -73,6 +73,64 @@ func TestR2EnabledRequiresCompleteConfig(t *testing.T) {
 	}
 }
 
+func TestNormalizeDirectPlaybackMode(t *testing.T) {
+	tests := map[string]string{
+		"":         directPlaybackModeProxy,
+		"proxy":    directPlaybackModeProxy,
+		"redirect": directPlaybackModeRedirect,
+		"REDIRECT": directPlaybackModeRedirect,
+		"unknown":  directPlaybackModeProxy,
+	}
+	for in, want := range tests {
+		if got := normalizeDirectPlaybackMode(in); got != want {
+			t.Fatalf("expected %q for %q, got %q", want, in, got)
+		}
+	}
+}
+
+func TestProxyDirectMP4ForwardsRangeAndHeaders(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Range"); got != "bytes=0-3" {
+			t.Fatalf("expected Range to be forwarded, got %q", got)
+		}
+		if got := r.Header.Get("Referer"); got != "https://www.bilibili.com/video/BV1Fj411p7cP" {
+			t.Fatalf("expected Referer to be forwarded, got %q", got)
+		}
+		if got := r.Header.Get("Cookie"); got != "SESSDATA=test" {
+			t.Fatalf("expected Cookie to be forwarded, got %q", got)
+		}
+		if got := r.Header.Get("User-Agent"); got != "test-agent" {
+			t.Fatalf("expected User-Agent to be forwarded, got %q", got)
+		}
+		w.Header().Set("Content-Type", "video/mp4")
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("Content-Range", "bytes 0-3/8")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("test"))
+	}))
+	defer upstream.Close()
+
+	s := &Server{cfg: Config{
+		YTDLPUserAgent: "test-agent",
+		BilibiliCookie: "SESSDATA=test",
+	}}
+	req := httptest.NewRequest(http.MethodGet, "/?v=BV1Fj411p7cP", nil)
+	req.Header.Set("Range", "bytes=0-3")
+	rec := httptest.NewRecorder()
+
+	s.proxyDirectMP4(rec, req, "https://www.bilibili.com/video/BV1Fj411p7cP", upstream.URL)
+
+	if rec.Code != http.StatusPartialContent {
+		t.Fatalf("expected 206, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Range"); got != "bytes 0-3/8" {
+		t.Fatalf("expected Content-Range to be copied, got %q", got)
+	}
+	if got := rec.Body.String(); got != "test" {
+		t.Fatalf("expected body to be proxied, got %q", got)
+	}
+}
+
 func TestValidateSourceURL(t *testing.T) {
 	s := &Server{cfg: Config{AllowedHosts: []string{"bilibili.com", "b23.tv", "youtube.com", "youtu.be"}}}
 

@@ -51,16 +51,16 @@ https://video.example.com/vrchat/youtube-xxxxxxxxxxx/mp4/video.mp4
 
 If R2 is not configured, the HTTP conversion API returns `503 Service Unavailable` instead of downloading media to local disk.
 
-## Direct MP4 Redirect
+## Direct MP4 Convenience Route
 
-For a quick temporary Bilibili MP4 redirect, pass `v` on the homepage URL:
+For quick Bilibili MP4 playback, pass `v` on the homepage URL:
 
 ```text
 http://localhost:8090/?v=BVxxxx
 http://localhost:8090/?v=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBVxxxx%2F
 ```
 
-The service resolves the Bilibili HTML5 MP4 URL and returns `302 Found` to that temporary `.mp4` link. These Bilibili links expire and may still depend on Bilibili's request rules, so the generated `playback_url` remains the steadier option for VRChat use.
+By default, the service resolves the Bilibili HTML5 MP4 URL and proxies the video stream through itself, including range requests from video players. Set `DIRECT_PLAYBACK_MODE=redirect` to switch this route back to returning `302 Found` to Bilibili's temporary `.mp4` link. These Bilibili links still expire upstream, so the generated R2 `playback_url` remains the steadier option for longer sharing.
 
 ## Direct Download CLI
 
@@ -113,6 +113,7 @@ Environment variables:
 | `FFMPEG_PATH` | `ffmpeg` | Path to ffmpeg. |
 | `MAX_CONCURRENT_JOBS` | `1` | Concurrent conversion jobs. |
 | `JOB_TIMEOUT_MINUTES` | `90` | Per command timeout. |
+| `DIRECT_PLAYBACK_MODE` | `proxy` | Behavior for `/?v=BVxxxx`. Use `proxy` to stream through this service, or `redirect` to return a 302 temporary MP4 link. |
 | `ALLOWED_HOSTS` | `bilibili.com,www.bilibili.com,m.bilibili.com,b23.tv,youtube.com,www.youtube.com,m.youtube.com,music.youtube.com,youtu.be` | Comma-separated allowed source hosts. |
 | `R2_ENDPOINT` | empty | Cloudflare R2 S3 endpoint, usually `https://<account-id>.r2.cloudflarestorage.com`. |
 | `R2_ACCESS_KEY_ID` | empty | R2 API token access key ID. |
