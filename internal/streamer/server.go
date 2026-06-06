@@ -224,6 +224,15 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		Format:    req.Format,
 		Status:    StatusQueued,
 		Message:   "宸茬粡鏀跺埌鍟︼紝姝ｅ湪绛夊緟鍚庡彴鏁寸悊...",
+		Progress: JobProgress{
+			"download": ProgressStep{
+				Label:      "下载 MP4",
+				State:      "active",
+				BytesDone:  0,
+				BytesTotal: 100,
+				Message:    "正在等待后台整理...",
+			},
+		},
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

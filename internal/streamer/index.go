@@ -900,7 +900,7 @@ const indexHTML = `<!doctype html>
         }
 
         setLog(job.message || '正在轻轻整理中，请稍等...', job);
-        await sleep(2500);
+        await sleep(1500);
       }
     }
 
