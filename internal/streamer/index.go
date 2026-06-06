@@ -645,7 +645,7 @@ const indexHTML = `<!doctype html>
 
         <form id="convertForm">
           <div class="input-wrap">
-            <input id="url" name="url" autocomplete="off" required placeholder="Bilibili / YouTube 视频链接" />
+            <input id="url" name="url" autocomplete="off" required placeholder="Bilibili / YouTube 链接，或直接贴 BV 号" />
             <button class="clear-input" id="clearInput" type="button" title="清空当前链接" aria-label="清空当前链接">×</button>
             <button class="submit" id="submit" type="submit">轻轻整理</button>
           </div>
@@ -738,6 +738,28 @@ const indexHTML = `<!doctype html>
 
     function setLog(message) {
       log.textContent = message;
+    }
+
+    function isSupportedInput(value) {
+      const text = value.trim();
+      if (!text) return false;
+      if (/BV[0-9A-Za-z]{10,}/i.test(text)) return true;
+      const matches = text.match(/https?:\/\/[^\s<>"']+/g) || [];
+      return matches.some(candidate => {
+        try {
+          const host = new URL(candidate).hostname.toLowerCase();
+          return host === 'b23.tv' || host.endsWith('.b23.tv') ||
+            host === 'bilibili.com' || host.endsWith('.bilibili.com') ||
+            host === 'youtube.com' || host.endsWith('.youtube.com') ||
+            host === 'youtu.be' || host.endsWith('.youtu.be');
+        } catch (_) {
+          return false;
+        }
+      });
+    }
+
+    function unsupportedInputMessage() {
+      return '现在可以接住 Bilibili、b23.tv、YouTube 链接，也可以直接贴 BV 号。这个内容暂时不像支持的视频地址。';
     }
 
     function updateProgress() {
@@ -894,6 +916,14 @@ const indexHTML = `<!doctype html>
 
       const url = urlInput.value.trim();
       const format = new FormData(form).get('format');
+      if (!isSupportedInput(url)) {
+        setLog(unsupportedInputMessage());
+        result.classList.remove('is-visible');
+        submit.disabled = false;
+        submit.textContent = '轻轻整理';
+        urlInput.focus();
+        return;
+      }
 
       try {
         setLog('正在把这条链接放进小托盘...');
