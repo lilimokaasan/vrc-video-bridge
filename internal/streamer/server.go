@@ -668,7 +668,8 @@ type bilibiliViewResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
-		CID int64 `json:"cid"`
+		CID      int64 `json:"cid"`
+		Duration int   `json:"duration"`
 	} `json:"data"`
 }
 
@@ -842,8 +843,20 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 
 	target := filepath.Join(workDir, "source.mp4")
 	headers := s.bilibiliHeaders(sourceURL)
-	s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在下载并整理 MP4...")
-	if err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
+	duration := time.Duration(view.Data.Duration) * time.Second
+	totalMS := duration.Milliseconds()
+	if totalMS <= 0 {
+		s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在下载并整理 MP4...")
+	} else {
+		s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, totalMS, "正在下载并整理 MP4...")
+	}
+	if err := runFFmpegWithProgress(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath, duration, func(done time.Duration) {
+		if totalMS <= 0 {
+			s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在下载并整理 MP4...")
+			return
+		}
+		s.setJobProgress(job.ID, "download", "下载 MP4", "active", done.Milliseconds(), totalMS, "正在下载并整理 MP4...")
+	},
 		"-y",
 		"-headers", headers,
 		"-i", video.BaseURL,
