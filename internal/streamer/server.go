@@ -638,8 +638,9 @@ type bilibiliPlayURLResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
-		DURL []bilibiliDirectStream `json:"durl"`
-		Dash struct {
+		Quality int                    `json:"quality"`
+		DURL    []bilibiliDirectStream `json:"durl"`
+		Dash    struct {
 			Video []bilibiliDashStream `json:"video"`
 			Audio []bilibiliDashStream `json:"audio"`
 		} `json:"dash"`
@@ -657,6 +658,12 @@ type bilibiliDashStream struct {
 	BaseURL   string `json:"baseUrl"`
 	Codecs    string `json:"codecs"`
 	Bandwidth int    `json:"bandwidth"`
+}
+
+type bilibiliProgressiveCandidate struct {
+	stream        bilibiliDirectStream
+	requestedQN   int
+	actualQuality int
 }
 
 func (s *Server) resolveBilibiliDirectURL(sourceURL string) (string, error) {
@@ -714,6 +721,7 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 	}
 
 	var fallbackDirectURL string
+	var fallbackProgressive bilibiliProgressiveCandidate
 	qualityCandidates := s.bilibiliQualityCandidates()
 	for _, qn := range qualityCandidates {
 		progressiveURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=%d&platform=html5&high_quality=1", url.QueryEscape(bvid), view.Data.CID, qn)
@@ -735,6 +743,17 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 			if onDirectURL != nil {
 				onDirectURL(direct.URL)
 			}
+		}
+		if fallbackProgressive.stream.URL == "" {
+			fallbackProgressive = bilibiliProgressiveCandidate{
+				stream:        direct,
+				requestedQN:   qn,
+				actualQuality: progressive.Data.Quality,
+			}
+		}
+		if progressive.Data.Quality > 0 && progressive.Data.Quality < s.cfg.BilibiliQuality {
+			log.Printf("Bilibili progressive MP4 returned quality %d for requested qn=%d, trying DASH before lower-quality fallback", progressive.Data.Quality, qn)
+			continue
 		}
 		target := filepath.Join(workDir, "source.mp4")
 		if err := s.downloadDirectMP4WithRetry(job.ID, direct.URL, sourceURL, target, direct.Size); err == nil {
@@ -767,6 +786,16 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 	}
 
 	if video.BaseURL == "" || audio.BaseURL == "" {
+		if fallbackProgressive.stream.URL != "" {
+			log.Printf("Bilibili DASH stream unavailable, falling back to progressive MP4 quality %d from requested qn=%d", fallbackProgressive.actualQuality, fallbackProgressive.requestedQN)
+			target := filepath.Join(workDir, "source.mp4")
+			if err := s.downloadDirectMP4WithRetry(job.ID, fallbackProgressive.stream.URL, sourceURL, target, fallbackProgressive.stream.Size); err == nil {
+				return target, fallbackDirectURL, nil
+			} else {
+				_ = os.Remove(target)
+				log.Printf("Bilibili progressive MP4 fallback failed: %v", err)
+			}
+		}
 		if lastDashErr != nil {
 			return "", "", lastDashErr
 		}
