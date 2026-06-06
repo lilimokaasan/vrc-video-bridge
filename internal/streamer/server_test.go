@@ -131,6 +131,21 @@ func TestProxyDirectMP4ForwardsRangeAndHeaders(t *testing.T) {
 	}
 }
 
+func TestPublicDirectPlaybackURLUsesServiceProxy(t *testing.T) {
+	s := &Server{cfg: Config{PublicBaseURL: "https://vrc.example.test"}}
+	got := s.publicDirectPlaybackURL(
+		"https://www.bilibili.com/video/BV1Fj411p7cP/?spm_id_from=333.788",
+		"https://example.bilivideo.com/video.mp4",
+	)
+	want := "https://vrc.example.test/?v=BV1Fj411p7cP"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+	if got := s.publicDirectPlaybackURL("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "https://example.com/video.mp4"); got != "https://example.com/video.mp4" {
+		t.Fatalf("expected non-Bilibili URL to stay unchanged, got %q", got)
+	}
+}
+
 func TestValidateSourceURL(t *testing.T) {
 	s := &Server{cfg: Config{AllowedHosts: []string{"bilibili.com", "b23.tv", "youtube.com", "youtu.be"}}}
 

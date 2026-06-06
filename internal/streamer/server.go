@@ -263,7 +263,7 @@ func (s *Server) runJob(id string) {
 
 	directURL, err := s.prepareMedia(job, func(directURL string) {
 		s.updateJob(job.ID, func(j *Job) {
-			j.DirectURL = directURL
+			j.DirectURL = s.publicDirectPlaybackURL(j.SourceURL, directURL)
 			if directURL != "" {
 				j.Message = "先到的小纸条已经找到，正在整理视频..."
 			}
@@ -281,7 +281,7 @@ func (s *Server) runJob(id string) {
 	defer s.cleanupJobMedia(job.ID)
 
 	s.updateJob(job.ID, func(j *Job) {
-		j.DirectURL = directURL
+		j.DirectURL = s.publicDirectPlaybackURL(j.SourceURL, directURL)
 		if directURL != "" {
 			j.Message = "视频已经整理好，正在准备分享链接..."
 		} else {
@@ -1111,6 +1111,16 @@ func (s *Server) saveJob(job *Job) error {
 
 func (s *Server) publicURL(path string) string {
 	return s.cfg.PublicBaseURL + path
+}
+
+func (s *Server) publicDirectPlaybackURL(sourceURL, upstreamURL string) string {
+	if upstreamURL == "" || !isBilibiliURL(sourceURL) {
+		return upstreamURL
+	}
+	if bvid := bvidPattern.FindString(sourceURL); bvid != "" {
+		return s.publicURL("/?v=" + url.QueryEscape(bvid))
+	}
+	return s.publicURL("/?v=" + url.QueryEscape(sourceURL))
 }
 
 func writeJSON(w http.ResponseWriter, code int, value any) {
