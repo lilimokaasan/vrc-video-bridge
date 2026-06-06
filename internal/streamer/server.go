@@ -20,15 +20,21 @@ import (
 )
 
 type Server struct {
-	cfg     Config
-	mux     *http.ServeMux
-	sem     chan struct{}
-	storage objectStorage
-	mu      sync.RWMutex
-	jobs    map[string]*Job
+	cfg      Config
+	mux      *http.ServeMux
+	jobQueue chan string
+	storage  objectStorage
+	mu       sync.RWMutex
+	jobs     map[string]*Job
 }
 
 func NewServer(cfg Config) (*Server, error) {
+	if cfg.MaxConcurrentJobs < 1 {
+		cfg.MaxConcurrentJobs = 1
+	}
+	if cfg.JobQueueSize < 1 {
+		cfg.JobQueueSize = 1
+	}
 	if err := os.MkdirAll(cfg.mediaDir(), 0755); err != nil {
 		return nil, err
 	}
@@ -51,16 +57,17 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:     cfg,
-		mux:     http.NewServeMux(),
-		sem:     make(chan struct{}, cfg.MaxConcurrentJobs),
-		storage: storage,
-		jobs:    map[string]*Job{},
+		cfg:      cfg,
+		mux:      http.NewServeMux(),
+		jobQueue: make(chan string, cfg.JobQueueSize),
+		storage:  storage,
+		jobs:     map[string]*Job{},
 	}
 	if err := s.loadJobs(); err != nil {
 		return nil, err
 	}
 	s.registerRoutes()
+	s.startJobWorkers()
 	return s, nil
 }
 
@@ -216,6 +223,7 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		SourceURL: req.URL,
 		Format:    req.Format,
 		Status:    StatusQueued,
+		Message:   "宸茬粡鏀跺埌鍟︼紝姝ｅ湪绛夊緟鍚庡彴鏁寸悊...",
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -227,7 +235,14 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go s.runJob(job.ID)
+	if !s.enqueueJob(job.ID) {
+		s.mu.Lock()
+		delete(s.jobs, job.ID)
+		s.mu.Unlock()
+		_ = os.Remove(filepath.Join(s.cfg.jobsDir(), job.ID+".json"))
+		writeError(w, http.StatusServiceUnavailable, "现在排队的人有点多，请稍后再试")
+		return
+	}
 
 	writeJSON(w, http.StatusAccepted, CreateJobResponse{
 		ID:        job.ID,
@@ -246,10 +261,33 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, job)
 }
 
-func (s *Server) runJob(id string) {
-	s.sem <- struct{}{}
-	defer func() { <-s.sem }()
+func (s *Server) startJobWorkers() {
+	workerCount := s.cfg.MaxConcurrentJobs
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	for workerID := 1; workerID <= workerCount; workerID++ {
+		go s.jobWorker(workerID)
+	}
+}
 
+func (s *Server) jobWorker(workerID int) {
+	log.Printf("job worker %d started", workerID)
+	for id := range s.jobQueue {
+		s.runJob(id)
+	}
+}
+
+func (s *Server) enqueueJob(id string) bool {
+	select {
+	case s.jobQueue <- id:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) runJob(id string) {
 	job, ok := s.getJob(id)
 	if !ok {
 		return

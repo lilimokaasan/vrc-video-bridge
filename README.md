@@ -111,7 +111,8 @@ Environment variables:
 | `BILIBILI_QUALITY_FALLBACKS` | `80,64,32,16` | Bilibili API fallback quality list. The service tries each value until a usable stream is found. |
 | `FORMAT_SELECTOR` | `bv*[vcodec^=avc1]+ba[ext=m4a]/b[vcodec^=avc1]/bv*[vcodec^=avc1]+ba/bv*+ba/b` | yt-dlp format selector. Defaults to H.264 and m4a-first output for better VRChat/MP4 compatibility. |
 | `FFMPEG_PATH` | `ffmpeg` | Path to ffmpeg. |
-| `MAX_CONCURRENT_JOBS` | `1` | Concurrent conversion jobs. |
+| `MAX_CONCURRENT_JOBS` | `1` | Concurrent background download/upload workers. HTTP requests return immediately after a job is queued. |
+| `JOB_QUEUE_SIZE` | `16` | Maximum queued jobs waiting for a worker. When full, new job requests return `503` quickly. |
 | `JOB_TIMEOUT_MINUTES` | `90` | Per command timeout. |
 | `DIRECT_PLAYBACK_MODE` | `proxy` | Behavior for `/?v=BVxxxx`. Use `proxy` to stream through this service, or `redirect` to return a 302 temporary MP4 link. |
 | `ALLOWED_HOSTS` | `bilibili.com,www.bilibili.com,m.bilibili.com,b23.tv,youtube.com,www.youtube.com,m.youtube.com,music.youtube.com,youtu.be` | Comma-separated allowed source hosts. |

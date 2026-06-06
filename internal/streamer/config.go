@@ -27,6 +27,7 @@ type Config struct {
 	FormatSelector           string
 	FFmpegPath               string
 	MaxConcurrentJobs        int
+	JobQueueSize             int
 	JobTimeout               time.Duration
 	AllowedHosts             []string
 	R2Endpoint               string
@@ -60,6 +61,7 @@ func LoadConfig() Config {
 		FormatSelector:           envString("FORMAT_SELECTOR", "bv*[vcodec^=avc1]+ba[ext=m4a]/b[vcodec^=avc1]/bv*[vcodec^=avc1]+ba/bv*+ba/b"),
 		FFmpegPath:               envString("FFMPEG_PATH", "ffmpeg"),
 		MaxConcurrentJobs:        envInt("MAX_CONCURRENT_JOBS", 1),
+		JobQueueSize:             envInt("JOB_QUEUE_SIZE", 16),
 		JobTimeout:               time.Duration(envInt("JOB_TIMEOUT_MINUTES", 90)) * time.Minute,
 		AllowedHosts: strings.Split(envString("ALLOWED_HOSTS",
 			"bilibili.com,www.bilibili.com,m.bilibili.com,b23.tv,youtube.com,www.youtube.com,m.youtube.com,music.youtube.com,youtu.be"), ","),

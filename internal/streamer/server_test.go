@@ -88,6 +88,16 @@ func TestNormalizeDirectPlaybackMode(t *testing.T) {
 	}
 }
 
+func TestEnqueueJobReturnsFalseWhenQueueIsFull(t *testing.T) {
+	s := &Server{jobQueue: make(chan string, 1)}
+	if !s.enqueueJob("job-1") {
+		t.Fatal("expected first enqueue to succeed")
+	}
+	if s.enqueueJob("job-2") {
+		t.Fatal("expected enqueue to fail when queue is full")
+	}
+}
+
 func TestProxyDirectMP4ForwardsRangeAndHeaders(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Range"); got != "bytes=0-3" {
