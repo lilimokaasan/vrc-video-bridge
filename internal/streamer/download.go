@@ -91,7 +91,7 @@ func (s *Server) DirectDownload(opts DirectDownloadOptions) (*DirectDownloadResu
 }
 
 func safeOutputBaseName(rawURL, fallback string) string {
-	if bvid := bvidPattern.FindString(rawURL); bvid != "" {
+	if bvid := bilibiliMediaID(rawURL); bvid != "" {
 		return bvid
 	}
 	if youtubeID := youtubeVideoID(rawURL); youtubeID != "" {

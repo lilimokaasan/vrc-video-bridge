@@ -1,6 +1,7 @@
 package streamer
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -264,4 +265,99 @@ func TestBilibiliQualityCandidates(t *testing.T) {
 			t.Fatalf("expected %v, got %v", want, got)
 		}
 	}
+}
+
+func TestSelectedBilibiliPageUsesURLPage(t *testing.T) {
+	view := mustBilibiliView(t, `{
+		"code": 0,
+		"data": {
+			"cid": 1001,
+			"duration": 60,
+			"pages": [
+				{"cid": 1001, "page": 1, "duration": 60, "part": "first"},
+				{"cid": 2002, "page": 2, "duration": 120, "part": "second"}
+			]
+		}
+	}`)
+
+	page, err := selectedBilibiliPage("https://www.bilibili.com/video/BV1Fj411p7cP?p=2", view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.CID != 2002 || page.Page != 2 || page.Duration != 120 {
+		t.Fatalf("expected page 2 cid/duration, got %+v", page)
+	}
+}
+
+func TestSelectedBilibiliPageDefaultsToFirstPage(t *testing.T) {
+	view := mustBilibiliView(t, `{
+		"code": 0,
+		"data": {
+			"cid": 1001,
+			"duration": 60,
+			"pages": [
+				{"cid": 1001, "page": 1, "duration": 60, "part": "first"},
+				{"cid": 2002, "page": 2, "duration": 120, "part": "second"}
+			]
+		}
+	}`)
+
+	page, err := selectedBilibiliPage("https://www.bilibili.com/video/BV1Fj411p7cP", view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.CID != 1001 || page.Page != 1 {
+		t.Fatalf("expected first page, got %+v", page)
+	}
+}
+
+func TestSelectedBilibiliPageRejectsMissingRequestedPage(t *testing.T) {
+	view := mustBilibiliView(t, `{
+		"code": 0,
+		"data": {
+			"cid": 1001,
+			"duration": 60,
+			"pages": [
+				{"cid": 1001, "page": 1, "duration": 60, "part": "first"}
+			]
+		}
+	}`)
+
+	if _, err := selectedBilibiliPage("https://www.bilibili.com/video/BV1Fj411p7cP?p=2", view); err == nil {
+		t.Fatal("expected missing page to fail")
+	}
+}
+
+func TestBilibiliMediaIDIncludesPageWhenNeeded(t *testing.T) {
+	tests := map[string]string{
+		"https://www.bilibili.com/video/BV1Fj411p7cP":     "BV1Fj411p7cP",
+		"https://www.bilibili.com/video/BV1Fj411p7cP?p=1": "BV1Fj411p7cP",
+		"https://www.bilibili.com/video/BV1Fj411p7cP?p=2": "BV1Fj411p7cP-p2",
+	}
+	for rawURL, want := range tests {
+		if got := bilibiliMediaID(rawURL); got != want {
+			t.Fatalf("expected %q for %s, got %q", want, rawURL, got)
+		}
+	}
+}
+
+func TestMediaObjectPrefixIncludesBilibiliPage(t *testing.T) {
+	s := &Server{cfg: Config{R2KeyPrefix: "vrchat"}}
+	job := &Job{
+		SourceURL: "https://www.bilibili.com/video/BV1Fj411p7cP?p=12",
+		Format:    FormatMP4,
+	}
+
+	if got, want := s.mediaObjectPrefix(job), "vrchat/BV1Fj411p7cP-p12/mp4"; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func mustBilibiliView(t *testing.T, raw string) bilibiliViewResponse {
+	t.Helper()
+	var view bilibiliViewResponse
+	if err := json.Unmarshal([]byte(raw), &view); err != nil {
+		t.Fatal(err)
+	}
+	return view
 }

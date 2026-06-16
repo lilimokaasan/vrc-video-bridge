@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -673,13 +674,80 @@ func (s *Server) bilibiliQualityCandidates() []int {
 	return candidates
 }
 
+func bilibiliMediaID(rawURL string) string {
+	bvid := bvidPattern.FindString(rawURL)
+	if bvid == "" {
+		return ""
+	}
+	page := bilibiliPageNumber(rawURL)
+	if page > 1 {
+		return fmt.Sprintf("%s-p%d", bvid, page)
+	}
+	return bvid
+}
+
+func bilibiliPageNumber(rawURL string) int {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return 1
+	}
+	pageValue := parsed.Query().Get("p")
+	if pageValue == "" {
+		return 1
+	}
+	page, err := strconv.Atoi(pageValue)
+	if err != nil || page < 1 {
+		return 1
+	}
+	return page
+}
+
+func selectedBilibiliPage(sourceURL string, view bilibiliViewResponse) (bilibiliPageInfo, error) {
+	requestedPage := bilibiliPageNumber(sourceURL)
+	if len(view.Data.Pages) == 0 {
+		if requestedPage > 1 {
+			return bilibiliPageInfo{}, fmt.Errorf("Bilibili page p=%d was requested, but the view API did not return page data", requestedPage)
+		}
+		return bilibiliPageInfo{
+			CID:      view.Data.CID,
+			Page:     1,
+			Duration: view.Data.Duration,
+		}, nil
+	}
+
+	for _, page := range view.Data.Pages {
+		if page.Page == requestedPage {
+			return bilibiliPageInfo{
+				CID:      page.CID,
+				Page:     page.Page,
+				Duration: page.Duration,
+				Part:     page.Part,
+			}, nil
+		}
+	}
+	return bilibiliPageInfo{}, fmt.Errorf("Bilibili page p=%d was not found", requestedPage)
+}
+
 type bilibiliViewResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
 		CID      int64 `json:"cid"`
 		Duration int   `json:"duration"`
+		Pages    []struct {
+			CID      int64  `json:"cid"`
+			Page     int    `json:"page"`
+			Duration int    `json:"duration"`
+			Part     string `json:"part"`
+		} `json:"pages"`
 	} `json:"data"`
+}
+
+type bilibiliPageInfo struct {
+	CID      int64
+	Page     int
+	Duration int
+	Part     string
 }
 
 type bilibiliPlayURLResponse struct {
@@ -728,10 +796,14 @@ func (s *Server) resolveBilibiliDirectURL(sourceURL string) (string, error) {
 	if view.Code != 0 || view.Data.CID == 0 {
 		return "", fmt.Errorf("view API returned code %d: %s", view.Code, view.Message)
 	}
+	page, err := selectedBilibiliPage(sourceURL, view)
+	if err != nil {
+		return "", err
+	}
 
 	var lastErr error
 	for _, qn := range s.bilibiliQualityCandidates() {
-		playURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=%d&platform=html5&high_quality=1", url.QueryEscape(bvid), view.Data.CID, qn)
+		playURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=%d&platform=html5&high_quality=1", url.QueryEscape(bvid), page.CID, qn)
 		var play bilibiliPlayURLResponse
 		if err := s.fetchBilibiliJSON(client, playURL, sourceURL, &play); err != nil {
 			lastErr = err
@@ -767,12 +839,16 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 	if view.Code != 0 || view.Data.CID == 0 {
 		return "", "", fmt.Errorf("view API returned code %d: %s", view.Code, view.Message)
 	}
+	page, err := selectedBilibiliPage(sourceURL, view)
+	if err != nil {
+		return "", "", err
+	}
 
 	var fallbackDirectURL string
 	var fallbackProgressive bilibiliProgressiveCandidate
 	qualityCandidates := s.bilibiliQualityCandidates()
 	for _, qn := range qualityCandidates {
-		progressiveURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=%d&platform=html5&high_quality=1", url.QueryEscape(bvid), view.Data.CID, qn)
+		progressiveURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=%d&platform=html5&high_quality=1", url.QueryEscape(bvid), page.CID, qn)
 		var progressive bilibiliPlayURLResponse
 		if err := s.fetchBilibiliJSON(client, progressiveURL, sourceURL, &progressive); err != nil {
 			log.Printf("Bilibili progressive playurl API failed for qn=%d, trying fallback: %v", qn, err)
@@ -816,7 +892,7 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 	var audio bilibiliDashStream
 	var lastDashErr error
 	for _, qn := range qualityCandidates {
-		playURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=%d&fnval=16&fourk=1", url.QueryEscape(bvid), view.Data.CID, qn)
+		playURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=%d&fnval=16&fourk=1", url.QueryEscape(bvid), page.CID, qn)
 		var play bilibiliPlayURLResponse
 		if err := s.fetchBilibiliJSON(client, playURL, sourceURL, &play); err != nil {
 			lastDashErr = err
@@ -852,7 +928,7 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 
 	target := filepath.Join(workDir, "source.mp4")
 	headers := s.bilibiliHeaders(sourceURL)
-	duration := time.Duration(view.Data.Duration) * time.Second
+	duration := time.Duration(page.Duration) * time.Second
 	totalMS := duration.Milliseconds()
 	if totalMS <= 0 {
 		s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在下载并整理 MP4...")
