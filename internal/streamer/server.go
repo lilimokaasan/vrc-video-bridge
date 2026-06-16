@@ -702,6 +702,14 @@ func bilibiliPageNumber(rawURL string) int {
 	return page
 }
 
+func hasExplicitBilibiliPage(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return parsed.Query().Get("p") != ""
+}
+
 func selectedBilibiliPage(sourceURL string, view bilibiliViewResponse) (bilibiliPageInfo, error) {
 	requestedPage := bilibiliPageNumber(sourceURL)
 	if len(view.Data.Pages) == 0 {
@@ -726,6 +734,39 @@ func selectedBilibiliPage(sourceURL string, view bilibiliViewResponse) (bilibili
 		}
 	}
 	return bilibiliPageInfo{}, fmt.Errorf("Bilibili page p=%d was not found", requestedPage)
+}
+
+func selectedBilibiliPages(sourceURL string, view bilibiliViewResponse) ([]bilibiliPageInfo, error) {
+	if hasExplicitBilibiliPage(sourceURL) {
+		page, err := selectedBilibiliPage(sourceURL, view)
+		if err != nil {
+			return nil, err
+		}
+		return []bilibiliPageInfo{page}, nil
+	}
+	if len(view.Data.Pages) == 0 {
+		return []bilibiliPageInfo{{
+			CID:      view.Data.CID,
+			Page:     1,
+			Duration: view.Data.Duration,
+		}}, nil
+	}
+	pages := make([]bilibiliPageInfo, 0, len(view.Data.Pages))
+	for _, page := range view.Data.Pages {
+		if page.CID == 0 || page.Page < 1 {
+			continue
+		}
+		pages = append(pages, bilibiliPageInfo{
+			CID:      page.CID,
+			Page:     page.Page,
+			Duration: page.Duration,
+			Part:     page.Part,
+		})
+	}
+	if len(pages) == 0 {
+		return nil, errors.New("Bilibili view API did not return usable page data")
+	}
+	return pages, nil
 }
 
 type bilibiliViewResponse struct {
@@ -839,11 +880,74 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 	if view.Code != 0 || view.Data.CID == 0 {
 		return "", "", fmt.Errorf("view API returned code %d: %s", view.Code, view.Message)
 	}
-	page, err := selectedBilibiliPage(sourceURL, view)
+	pages, err := selectedBilibiliPages(sourceURL, view)
 	if err != nil {
 		return "", "", err
 	}
+	if len(pages) > 1 {
+		return s.downloadBilibiliPagesWithAPI(job, workDir, sourceURL, bvid, pages)
+	}
+	return s.downloadBilibiliPageWithAPI(job, workDir, sourceURL, bvid, pages[0], filepath.Join(workDir, "source.mp4"), onDirectURL)
+}
 
+func (s *Server) downloadBilibiliPagesWithAPI(job *Job, workDir, sourceURL, bvid string, pages []bilibiliPageInfo) (string, string, error) {
+	segmentPaths := make([]string, 0, len(pages))
+	var totalDuration time.Duration
+	for index, page := range pages {
+		if page.Duration > 0 {
+			totalDuration += time.Duration(page.Duration) * time.Second
+		}
+		target := filepath.Join(workDir, fmt.Sprintf("part_%04d.mp4", index+1))
+		s.setJobProgress(job.ID, "download", "下载 MP4", "active", int64(index), int64(len(pages)), fmt.Sprintf("正在下载第 %d/%d 段...", index+1, len(pages)))
+		if _, _, err := s.downloadBilibiliPageWithAPI(job, workDir, sourceURL, bvid, page, target, nil); err != nil {
+			return "", "", err
+		}
+		segmentPaths = append(segmentPaths, target)
+	}
+
+	listPath := filepath.Join(workDir, "concat.txt")
+	if err := os.WriteFile(listPath, []byte(ffmpegConcatList(segmentPaths)), 0644); err != nil {
+		return "", "", err
+	}
+
+	target := filepath.Join(workDir, "source.mp4")
+	totalMS := totalDuration.Milliseconds()
+	if totalMS <= 0 {
+		s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在整理完整视频...")
+	} else {
+		s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, totalMS, "正在整理完整视频...")
+	}
+	if err := runFFmpegWithProgress(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath, totalDuration, func(done time.Duration) {
+		if totalMS <= 0 {
+			s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在整理完整视频...")
+			return
+		}
+		s.setJobProgress(job.ID, "download", "下载 MP4", "active", done.Milliseconds(), totalMS, "正在整理完整视频...")
+	},
+		"-y",
+		"-f", "concat",
+		"-safe", "0",
+		"-i", listPath,
+		"-c", "copy",
+		"-movflags", "+faststart",
+		target); err != nil {
+		return "", "", err
+	}
+	return target, "", nil
+}
+
+func ffmpegConcatList(paths []string) string {
+	var b strings.Builder
+	for _, path := range paths {
+		b.WriteString("file '")
+		b.WriteString(strings.ReplaceAll(path, "'", "'\\''"))
+		b.WriteString("'\n")
+	}
+	return b.String()
+}
+
+func (s *Server) downloadBilibiliPageWithAPI(job *Job, workDir, sourceURL, bvid string, page bilibiliPageInfo, target string, onDirectURL directURLCallback) (string, string, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
 	var fallbackDirectURL string
 	var fallbackProgressive bilibiliProgressiveCandidate
 	qualityCandidates := s.bilibiliQualityCandidates()
@@ -879,7 +983,6 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 			log.Printf("Bilibili progressive MP4 returned quality %d for requested qn=%d, trying DASH before lower-quality fallback", progressive.Data.Quality, qn)
 			continue
 		}
-		target := filepath.Join(workDir, "source.mp4")
 		if err := s.downloadDirectMP4WithRetry(job.ID, direct.URL, sourceURL, target, direct.Size); err == nil {
 			return target, direct.URL, nil
 		} else {
@@ -912,7 +1015,6 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 	if video.BaseURL == "" || audio.BaseURL == "" {
 		if fallbackProgressive.stream.URL != "" {
 			log.Printf("Bilibili DASH stream unavailable, falling back to progressive MP4 quality %d from requested qn=%d", fallbackProgressive.actualQuality, fallbackProgressive.requestedQN)
-			target := filepath.Join(workDir, "source.mp4")
 			if err := s.downloadDirectMP4WithRetry(job.ID, fallbackProgressive.stream.URL, sourceURL, target, fallbackProgressive.stream.Size); err == nil {
 				return target, fallbackDirectURL, nil
 			} else {
@@ -926,7 +1028,6 @@ func (s *Server) downloadVideoWithBilibiliAPI(job *Job, workDir string, onDirect
 		return "", "", errors.New("playurl API did not return usable H.264/AAC streams")
 	}
 
-	target := filepath.Join(workDir, "source.mp4")
 	headers := s.bilibiliHeaders(sourceURL)
 	duration := time.Duration(page.Duration) * time.Second
 	totalMS := duration.Milliseconds()

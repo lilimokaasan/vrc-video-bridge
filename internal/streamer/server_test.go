@@ -328,6 +328,50 @@ func TestSelectedBilibiliPageRejectsMissingRequestedPage(t *testing.T) {
 	}
 }
 
+func TestSelectedBilibiliPagesReturnsAllPagesWithoutExplicitPage(t *testing.T) {
+	view := mustBilibiliView(t, `{
+		"code": 0,
+		"data": {
+			"cid": 1001,
+			"duration": 60,
+			"pages": [
+				{"cid": 1001, "page": 1, "duration": 60, "part": "first"},
+				{"cid": 2002, "page": 2, "duration": 120, "part": "second"}
+			]
+		}
+	}`)
+
+	pages, err := selectedBilibiliPages("https://www.bilibili.com/video/BV1Fj411p7cP", view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 2 || pages[0].CID != 1001 || pages[1].CID != 2002 {
+		t.Fatalf("expected both pages, got %+v", pages)
+	}
+}
+
+func TestSelectedBilibiliPagesReturnsOnlyExplicitPage(t *testing.T) {
+	view := mustBilibiliView(t, `{
+		"code": 0,
+		"data": {
+			"cid": 1001,
+			"duration": 60,
+			"pages": [
+				{"cid": 1001, "page": 1, "duration": 60, "part": "first"},
+				{"cid": 2002, "page": 2, "duration": 120, "part": "second"}
+			]
+		}
+	}`)
+
+	pages, err := selectedBilibiliPages("https://www.bilibili.com/video/BV1Fj411p7cP?p=2", view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0].CID != 2002 {
+		t.Fatalf("expected only requested page, got %+v", pages)
+	}
+}
+
 func TestBilibiliMediaIDIncludesPageWhenNeeded(t *testing.T) {
 	tests := map[string]string{
 		"https://www.bilibili.com/video/BV1Fj411p7cP":     "BV1Fj411p7cP",
@@ -349,6 +393,14 @@ func TestMediaObjectPrefixIncludesBilibiliPage(t *testing.T) {
 	}
 
 	if got, want := s.mediaObjectPrefix(job), "vrchat/BV1Fj411p7cP-p12/mp4"; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestFFmpegConcatList(t *testing.T) {
+	got := ffmpegConcatList([]string{"/tmp/part_0001.mp4", "/tmp/part_0002.mp4"})
+	want := "file '/tmp/part_0001.mp4'\nfile '/tmp/part_0002.mp4'\n"
+	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
 }
