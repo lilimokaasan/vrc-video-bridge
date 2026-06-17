@@ -546,6 +546,10 @@ const indexHTML = `<!doctype html>
       animation-delay: .28s;
     }
 
+    .note:nth-child(3) {
+      animation-delay: .4s;
+    }
+
     .note h2 {
       margin: 0 0 10px;
       font-size: 16px;
@@ -601,6 +605,129 @@ const indexHTML = `<!doctype html>
       white-space: pre-wrap;
     }
 
+    .history-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .history-head h2 {
+      margin: 0;
+    }
+
+    .history-clear {
+      flex: 0 0 auto;
+      min-height: 30px;
+      padding: 0 11px;
+      border-radius: 999px;
+      border: 1px solid rgba(251,152,192,.18);
+      color: #b76083;
+      background: linear-gradient(180deg, rgba(255,255,255,.88), rgba(255,244,249,.74));
+      font-size: 12px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.86);
+    }
+
+    .history-clear:hover:not(:disabled) {
+      transform: translateY(-1px);
+      border-color: rgba(251,152,192,.34);
+      box-shadow: 0 8px 16px rgba(251,152,192,.14), inset 0 1px 0 rgba(255,255,255,.9);
+    }
+
+    .history-clear:disabled {
+      cursor: default;
+      opacity: .45;
+    }
+
+    .history-list {
+      display: grid;
+      gap: 10px;
+      max-height: 360px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .history-empty {
+      margin: 0;
+      padding: 14px;
+      border-radius: 12px;
+      color: #9a8794;
+      background: rgba(255,255,255,.58);
+      border: 1px dashed rgba(251,152,192,.22);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .history-card {
+      display: grid;
+      gap: 9px;
+      padding: 12px;
+      border-radius: 13px;
+      border: 1px solid rgba(251,152,192,.16);
+      background: linear-gradient(180deg, rgba(255,255,255,.7), rgba(255,247,251,.56));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.82);
+    }
+
+    .history-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: #a08294;
+      font-size: 11px;
+    }
+
+    .history-format {
+      min-width: 42px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      color: #b76083;
+      background: rgba(255,238,245,.78);
+      text-align: center;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .history-source,
+    .history-playback {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #7c6c78;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .history-playback {
+      color: #d95f95;
+      text-decoration: none;
+    }
+
+    .history-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .history-action {
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 9px;
+      color: #b76083;
+      background: rgba(255,255,255,.72);
+      border: 1px solid rgba(251,152,192,.18);
+      font-size: 12px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.82);
+    }
+
+    .history-action:hover {
+      transform: translateY(-1px);
+      background: linear-gradient(180deg, rgba(255,249,252,.96), rgba(255,239,246,.86));
+      box-shadow: 0 8px 16px rgba(251,152,192,.13), inset 0 1px 0 rgba(255,255,255,.9);
+    }
+
     footer {
       color: rgba(126,111,123,.76);
       font-size: 12px;
@@ -615,6 +742,7 @@ const indexHTML = `<!doctype html>
       .input-wrap { grid-template-columns: minmax(0, 1fr) auto; }
       .submit { grid-column: 1 / -1; width: 100%; }
       .status-pill { display: none; }
+      .history-list { max-height: none; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -707,6 +835,14 @@ const indexHTML = `<!doctype html>
           <h2>小小回声</h2>
           <pre class="log" id="log">等一条想分享的视频链接...</pre>
         </section>
+
+        <section class="note panel history-panel">
+          <div class="history-head">
+            <h2>最近整理</h2>
+            <button class="history-clear" id="clearHistory" type="button">清空</button>
+          </div>
+          <div class="history-list" id="historyList" aria-live="polite"></div>
+        </section>
       </aside>
     </main>
 
@@ -730,10 +866,14 @@ const indexHTML = `<!doctype html>
     const jobProgress = document.querySelector('#jobProgress');
     const progressItems = document.querySelectorAll('[data-progress-key]');
     const copyButtons = document.querySelectorAll('[data-copy-target]');
+    const historyList = document.querySelector('#historyList');
+    const clearHistory = document.querySelector('#clearHistory');
     const segmented = document.querySelector('.segmented');
     const progress = document.querySelector('.scrollbar-progress');
 
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const historyKey = 'koimoeLinkRoomHistory';
+    const historyLimit = 14;
     let activePollToken = 0;
 
     function setLog(message) {
@@ -775,6 +915,115 @@ const indexHTML = `<!doctype html>
     function compactURL(url) {
       if (!url || url.length <= 72) return url;
       return url.slice(0, 42) + '...' + url.slice(-24);
+    }
+
+    function historyTime(value) {
+      try {
+        return new Intl.DateTimeFormat('zh-CN', {
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        }).format(new Date(value));
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function readHistory() {
+      try {
+        const items = JSON.parse(localStorage.getItem(historyKey) || '[]');
+        return Array.isArray(items) ? items.filter(item => item && item.playbackURL) : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function writeHistory(items) {
+      try {
+        localStorage.setItem(historyKey, JSON.stringify(items.slice(0, historyLimit)));
+      } catch (_) {
+        setLog('浏览器暂时没有允许保存历史记录，但这次链接已经整理好了。');
+      }
+    }
+
+    function addHistory(job, submittedURL) {
+      if (!job || !job.playback_url) return;
+      const sourceURL = job.source_url || submittedURL || '';
+      const item = {
+        id: job.id || String(Date.now()),
+        sourceURL: sourceURL,
+        directURL: job.direct_url || '',
+        playbackURL: job.playback_url,
+        format: job.format || new FormData(form).get('format') || 'mp4',
+        savedAt: new Date().toISOString()
+      };
+      const items = readHistory().filter(existing => {
+        return existing.playbackURL !== item.playbackURL && existing.sourceURL !== item.sourceURL;
+      });
+      items.unshift(item);
+      writeHistory(items);
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const items = readHistory();
+      historyList.innerHTML = '';
+      clearHistory.disabled = items.length === 0;
+
+      if (!items.length) {
+        const empty = document.createElement('p');
+        empty.className = 'history-empty';
+        empty.textContent = '整理完成的链接会留在这里，只保存在这个浏览器里。';
+        historyList.appendChild(empty);
+        return;
+      }
+
+      items.forEach(item => {
+        const card = document.createElement('article');
+        card.className = 'history-card';
+        card.dataset.historyId = item.id;
+
+        const meta = document.createElement('div');
+        meta.className = 'history-meta';
+        const format = document.createElement('span');
+        format.className = 'history-format';
+        format.textContent = item.format || 'mp4';
+        const time = document.createElement('span');
+        time.textContent = historyTime(item.savedAt);
+        meta.append(format, time);
+
+        const source = document.createElement('div');
+        source.className = 'history-source';
+        source.title = item.sourceURL || '';
+        source.textContent = compactURL(item.sourceURL || '没有记录原始链接');
+
+        const playbackLink = document.createElement('a');
+        playbackLink.className = 'history-playback';
+        playbackLink.href = item.playbackURL;
+        playbackLink.target = '_blank';
+        playbackLink.rel = 'noreferrer';
+        playbackLink.title = item.playbackURL;
+        playbackLink.textContent = compactURL(item.playbackURL);
+
+        const actions = document.createElement('div');
+        actions.className = 'history-actions';
+        [
+          ['copy', '复制'],
+          ['reuse', '再用一次'],
+          ['remove', '移除']
+        ].forEach(action => {
+          const button = document.createElement('button');
+          button.className = 'history-action';
+          button.type = 'button';
+          button.dataset.historyAction = action[0];
+          button.textContent = action[1];
+          actions.appendChild(button);
+        });
+
+        card.append(meta, source, playbackLink, actions);
+        historyList.appendChild(card);
+      });
     }
 
     function setLink(anchor, url, waitingText) {
@@ -880,7 +1129,7 @@ const indexHTML = `<!doctype html>
       return data;
     }
 
-    async function poll(statusURL, token) {
+    async function poll(statusURL, token, submittedURL) {
       for (;;) {
         if (token !== activePollToken) return;
         const res = await fetch(statusURL);
@@ -892,6 +1141,7 @@ const indexHTML = `<!doctype html>
 
         if (job.status === 'ready') {
           setLog('已经整理好啦，可以拿去分享了。', job);
+          addHistory(job, submittedURL);
           return;
         }
         if (job.status === 'failed') {
@@ -930,7 +1180,7 @@ const indexHTML = `<!doctype html>
         const job = await createJob(url, format);
         if (pollToken !== activePollToken) return;
         setLog('已经收到啦，正在轻轻整理...', job);
-        await poll(job.status_url.replace(location.origin, ''), pollToken);
+        await poll(job.status_url.replace(location.origin, ''), pollToken, url);
       } catch (error) {
         if (pollToken === activePollToken) {
           setLog(error.message);
@@ -964,6 +1214,52 @@ const indexHTML = `<!doctype html>
       });
     });
 
+    historyList.addEventListener('click', async event => {
+      const button = event.target.closest('[data-history-action]');
+      if (!button) return;
+      const card = button.closest('[data-history-id]');
+      if (!card) return;
+      const items = readHistory();
+      const item = items.find(candidate => candidate.id === card.dataset.historyId);
+      if (!item) return;
+
+      if (button.dataset.historyAction === 'copy') {
+        await navigator.clipboard.writeText(item.playbackURL);
+        button.textContent = '已复制';
+        setTimeout(() => button.textContent = '复制', 1200);
+        return;
+      }
+
+      if (button.dataset.historyAction === 'reuse') {
+        activePollToken++;
+        urlInput.value = item.sourceURL || '';
+        const formatInput = form.querySelector('input[name="format"][value="' + (item.format || 'mp4') + '"]');
+        if (formatInput) {
+          formatInput.checked = true;
+          syncFormatControl();
+        }
+        resetLinks();
+        resetJobProgress();
+        submit.disabled = false;
+        submit.textContent = '轻轻整理';
+        setLog('已经把这条历史链接放回输入框了。');
+        urlInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        urlInput.focus();
+        return;
+      }
+
+      if (button.dataset.historyAction === 'remove') {
+        writeHistory(items.filter(candidate => candidate.id !== item.id));
+        renderHistory();
+      }
+    });
+
+    clearHistory.addEventListener('click', () => {
+      writeHistory([]);
+      renderHistory();
+      setLog('历史记录已经清空了。');
+    });
+
     [direct, playback].forEach(anchor => {
       anchor.addEventListener('click', event => {
         const fullURL = anchor.dataset.fullUrl || '';
@@ -977,6 +1273,7 @@ const indexHTML = `<!doctype html>
     window.addEventListener('scroll', updateProgress, { passive: true });
     window.addEventListener('resize', updateProgress);
     syncFormatControl();
+    renderHistory();
     updateProgress();
   </script>
 </body>
