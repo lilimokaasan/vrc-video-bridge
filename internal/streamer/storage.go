@@ -7,6 +7,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,7 +139,7 @@ func (s *Server) publishMedia(job *Job) (string, error) {
 		if err := s.storage.UploadFile(filepath.Join(workDir, "video.mp4"), key, s.throttledProgress(job.ID, "upload", "上传到 R2")); err != nil {
 			return "", err
 		}
-		return s.storage.PublicURL(key), nil
+		return cacheBustURL(s.storage.PublicURL(key), job.ID), nil
 	}
 
 	entries, err := os.ReadDir(workDir)
@@ -183,7 +184,18 @@ func (s *Server) publishMedia(job *Job) (string, error) {
 			return "", err
 		}
 	}
-	return s.storage.PublicURL(prefix + "/index.m3u8"), nil
+	return cacheBustURL(s.storage.PublicURL(prefix+"/index.m3u8"), job.ID), nil
+}
+
+func cacheBustURL(rawURL, token string) string {
+	if rawURL == "" || token == "" {
+		return rawURL
+	}
+	separator := "?"
+	if strings.Contains(rawURL, "?") {
+		separator = "&"
+	}
+	return rawURL + separator + "v=" + url.QueryEscape(token)
 }
 
 func (s *Server) CheckStorage() (string, error) {

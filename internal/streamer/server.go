@@ -388,11 +388,17 @@ func (s *Server) prepareMedia(job *Job, onDirectURL directURLCallback) (string, 
 	if job.Format == FormatMP4 {
 		target := filepath.Join(workDir, "video.mp4")
 		if filepath.Clean(sourcePath) == filepath.Clean(target) {
+			if err := s.validateMP4Duration(target, 0); err != nil {
+				return "", err
+			}
 			return directURL, nil
 		}
 		s.setJobProgress(job.ID, "download", "下载 MP4", "active", 0, 0, "正在整理视频文件...")
 		if err := runCommand(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath,
 			"-y", "-i", sourcePath, "-c", "copy", "-movflags", "+faststart", target); err != nil {
+			return "", err
+		}
+		if err := s.validateMP4Duration(target, 0); err != nil {
 			return "", err
 		}
 		s.setJobProgress(job.ID, "download", "下载 MP4", "done", 100, 100, "MP4 已下载完成")
@@ -951,6 +957,7 @@ func (s *Server) downloadBilibiliPageWithAPI(job *Job, workDir, sourceURL, bvid 
 	var fallbackDirectURL string
 	var fallbackProgressive bilibiliProgressiveCandidate
 	qualityCandidates := s.bilibiliQualityCandidates()
+	expectedDuration := time.Duration(page.Duration) * time.Second
 	for _, qn := range qualityCandidates {
 		progressiveURL := fmt.Sprintf("https://api.bilibili.com/x/player/playurl?bvid=%s&cid=%d&qn=%d&platform=html5&high_quality=1", url.QueryEscape(bvid), page.CID, qn)
 		var progressive bilibiliPlayURLResponse
@@ -984,7 +991,12 @@ func (s *Server) downloadBilibiliPageWithAPI(job *Job, workDir, sourceURL, bvid 
 			continue
 		}
 		if err := s.downloadDirectMP4WithRetry(job.ID, direct.URL, sourceURL, target, direct.Size); err == nil {
-			return target, direct.URL, nil
+			if err := s.validateMP4Duration(target, expectedDuration); err == nil {
+				return target, direct.URL, nil
+			} else {
+				_ = os.Remove(target)
+				log.Printf("Bilibili progressive MP4 validation failed for qn=%d, trying fallback: %v", qn, err)
+			}
 		} else {
 			_ = os.Remove(target)
 			log.Printf("Bilibili progressive MP4 download failed for qn=%d, trying fallback: %v", qn, err)
@@ -1005,28 +1017,45 @@ func (s *Server) downloadBilibiliPageWithAPI(job *Job, workDir, sourceURL, bvid 
 			lastDashErr = fmt.Errorf("playurl API returned code %d: %s", play.Code, play.Message)
 			continue
 		}
-		video = selectDashStream(play.Data.Dash.Video, "avc1")
-		audio = selectDashStream(play.Data.Dash.Audio, "mp4a")
-		if video.BaseURL != "" && audio.BaseURL != "" {
-			break
+		video := selectDashStream(play.Data.Dash.Video, "avc1")
+		audio := selectDashStream(play.Data.Dash.Audio, "mp4a")
+		if video.BaseURL == "" || audio.BaseURL == "" {
+			lastDashErr = fmt.Errorf("playurl API did not return usable H.264/AAC streams for qn=%d", qn)
+			continue
 		}
+		if err := s.remuxBilibiliDashMP4(job, workDir, sourceURL, video, audio, target, expectedDuration); err != nil {
+			lastDashErr = err
+			_ = os.Remove(target)
+			log.Printf("Bilibili DASH MP4 failed for qn=%d, trying next fallback: %v", qn, err)
+			continue
+		}
+		if err := s.validateMP4Duration(target, expectedDuration); err != nil {
+			lastDashErr = err
+			_ = os.Remove(target)
+			log.Printf("Bilibili DASH MP4 validation failed for qn=%d, trying next fallback: %v", qn, err)
+			continue
+		}
+		return target, fallbackDirectURL, nil
 	}
 
-	if video.BaseURL == "" || audio.BaseURL == "" {
-		if fallbackProgressive.stream.URL != "" {
-			log.Printf("Bilibili DASH stream unavailable, falling back to progressive MP4 quality %d from requested qn=%d", fallbackProgressive.actualQuality, fallbackProgressive.requestedQN)
-			if err := s.downloadDirectMP4WithRetry(job.ID, fallbackProgressive.stream.URL, sourceURL, target, fallbackProgressive.stream.Size); err == nil {
+	if fallbackProgressive.stream.URL != "" {
+		log.Printf("Bilibili DASH stream unavailable or invalid, falling back to progressive MP4 quality %d from requested qn=%d", fallbackProgressive.actualQuality, fallbackProgressive.requestedQN)
+		if err := s.downloadDirectMP4WithRetry(job.ID, fallbackProgressive.stream.URL, sourceURL, target, fallbackProgressive.stream.Size); err == nil {
+			if err := s.validateMP4Duration(target, expectedDuration); err == nil {
 				return target, fallbackDirectURL, nil
 			} else {
 				_ = os.Remove(target)
-				log.Printf("Bilibili progressive MP4 fallback failed: %v", err)
+				log.Printf("Bilibili progressive MP4 fallback validation failed: %v", err)
 			}
+		} else {
+			_ = os.Remove(target)
+			log.Printf("Bilibili progressive MP4 fallback failed: %v", err)
 		}
-		if lastDashErr != nil {
-			return "", "", lastDashErr
-		}
-		return "", "", errors.New("playurl API did not return usable H.264/AAC streams")
 	}
+	if lastDashErr != nil {
+		return "", "", lastDashErr
+	}
+	return "", "", errors.New("playurl API did not return usable H.264/AAC streams")
 
 	headers := s.bilibiliHeaders(sourceURL)
 	duration := time.Duration(page.Duration) * time.Second
@@ -1053,7 +1082,39 @@ func (s *Server) downloadBilibiliPageWithAPI(job *Job, workDir, sourceURL, bvid 
 		target); err != nil {
 		return "", "", err
 	}
+	if err := s.validateMP4Duration(target, expectedDuration); err != nil {
+		_ = os.Remove(target)
+		return "", "", err
+	}
 	return target, fallbackDirectURL, nil
+}
+
+func (s *Server) remuxBilibiliDashMP4(job *Job, workDir, sourceURL string, video, audio bilibiliDashStream, target string, duration time.Duration) error {
+	headers := s.bilibiliHeaders(sourceURL)
+	totalMS := duration.Milliseconds()
+	if totalMS <= 0 {
+		s.setJobProgress(job.ID, "download", "涓嬭浇 MP4", "active", 0, 0, "姝ｅ湪涓嬭浇骞舵暣鐞?MP4...")
+	} else {
+		s.setJobProgress(job.ID, "download", "涓嬭浇 MP4", "active", 0, totalMS, "姝ｅ湪涓嬭浇骞舵暣鐞?MP4...")
+	}
+	if err := runFFmpegWithProgress(s.cfg.JobTimeout, workDir, s.cfg.FFmpegPath, duration, func(done time.Duration) {
+		if totalMS <= 0 {
+			s.setJobProgress(job.ID, "download", "涓嬭浇 MP4", "active", 0, 0, "姝ｅ湪涓嬭浇骞舵暣鐞?MP4...")
+			return
+		}
+		s.setJobProgress(job.ID, "download", "涓嬭浇 MP4", "active", done.Milliseconds(), totalMS, "姝ｅ湪涓嬭浇骞舵暣鐞?MP4...")
+	},
+		"-y",
+		"-headers", headers,
+		"-i", video.BaseURL,
+		"-headers", headers,
+		"-i", audio.BaseURL,
+		"-c", "copy",
+		"-movflags", "+faststart",
+		target); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Server) downloadDirectMP4WithRetry(jobID, rawURL, referer, target string, expectedSize int64) error {

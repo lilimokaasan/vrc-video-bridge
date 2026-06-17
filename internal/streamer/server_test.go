@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRoutesServeHealth(t *testing.T) {
@@ -402,6 +403,35 @@ func TestFFmpegConcatList(t *testing.T) {
 	want := "file '/tmp/part_0001.mp4'\nfile '/tmp/part_0002.mp4'\n"
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestValidateMediaDurationRejectsShortVideoTrack(t *testing.T) {
+	report := mediaDurationReport{
+		Video: 10 * time.Second,
+		Audio: 23 * time.Second,
+	}
+	if err := validateMediaDuration(report, 23*time.Second); err == nil {
+		t.Fatal("expected short video track to be rejected")
+	}
+}
+
+func TestValidateMediaDurationAcceptsCompleteTracks(t *testing.T) {
+	report := mediaDurationReport{
+		Video: 23*time.Second + 60*time.Millisecond,
+		Audio: 23 * time.Second,
+	}
+	if err := validateMediaDuration(report, 23*time.Second); err != nil {
+		t.Fatalf("expected complete tracks to pass: %v", err)
+	}
+}
+
+func TestValidateMediaDurationRejectsMissingVideo(t *testing.T) {
+	report := mediaDurationReport{
+		Audio: 23 * time.Second,
+	}
+	if err := validateMediaDuration(report, 23*time.Second); err == nil {
+		t.Fatal("expected missing video stream to be rejected")
 	}
 }
 
